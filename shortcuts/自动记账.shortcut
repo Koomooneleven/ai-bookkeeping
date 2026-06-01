@@ -56,10 +56,10 @@
                     <key>Content-Type</key>
                     <string>application/json</string>
                     <key>X-API-Key</key>
-                    <string>YOUR_API_KEY_HERE</string>
+                    <string>jizhang2026</string>
                 </dict>
                 <key>WFURL</key>
-                <string>https://YOUR_DOMAIN_HERE/api/transactions</string>
+                <string>https://ai-bookkeeping-production-87a3.up.railway.app/api/transactions</string>
             </dict>
         </dict>
 
@@ -98,7 +98,7 @@
             <key>Text</key>
             <string>请输入服务器地址</string>
             <key>DefaultValue</key>
-            <string>https://YOUR_DOMAIN_HERE</string>
+            <string>https://ai-bookkeeping-production-87a3.up.railway.app</string>
         </dict>
     </array>
     <key>WFWorkflowName</key>
