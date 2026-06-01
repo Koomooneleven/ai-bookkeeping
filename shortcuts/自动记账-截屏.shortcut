@@ -7,7 +7,7 @@
 
     <key>WFWorkflowActions</key>
     <array>
-        <!-- ① 截屏 -->
+        <!-- ① 截屏（输出截屏图像） -->
         <dict>
             <key>WFWorkflowActionIdentifier</key>
             <string>is.workflow.actions.takescreenshot</string>
@@ -15,29 +15,7 @@
             <dict/>
         </dict>
 
-        <!-- ② 等待 -->
-        <dict>
-            <key>WFWorkflowActionIdentifier</key>
-            <string>is.workflow.actions.wait</string>
-            <key>WFWorkflowActionParameters</key>
-            <dict>
-                <key>WFWaitTime</key>
-                <real>1</real>
-            </dict>
-        </dict>
-
-        <!-- ③ 获取最新截屏 -->
-        <dict>
-            <key>WFWorkflowActionIdentifier</key>
-            <string>is.workflow.actions.getlatestphotoimports</string>
-            <key>WFWorkflowActionParameters</key>
-            <dict>
-                <key>WFGetLatestPhotoCount</key>
-                <integer>1</integer>
-            </dict>
-        </dict>
-
-        <!-- ④ 从图像提取文本 (OCR) -->
+        <!-- ② 从图像提取文本（直接接收截屏输出） -->
         <dict>
             <key>WFWorkflowActionIdentifier</key>
             <string>is.workflow.actions.extracttextfromimage</string>
@@ -45,7 +23,7 @@
             <dict/>
         </dict>
 
-        <!-- ⑤ URL -->
+        <!-- ③ URL -->
         <dict>
             <key>WFWorkflowActionIdentifier</key>
             <string>is.workflow.actions.url</string>
@@ -56,7 +34,7 @@
             </dict>
         </dict>
 
-        <!-- ⑥ HTTP POST -->
+        <!-- ④ HTTP POST -->
         <dict>
             <key>WFWorkflowActionIdentifier</key>
             <string>is.workflow.actions.getcontentsofurl</string>
@@ -76,20 +54,20 @@
             </dict>
         </dict>
 
-        <!-- ⑦ 显示结果 -->
+        <!-- ⑤ 显示结果 -->
         <dict>
             <key>WFWorkflowActionIdentifier</key>
             <string>is.workflow.actions.notification</string>
             <key>WFWorkflowActionParameters</key>
             <dict>
                 <key>WFNotificationActionBody</key>
-                <string>已记录</string>
+                <string>AI记账完成</string>
                 <key>WFNotificationActionTitle</key>
-                <string>AI记账</string>
+                <string>截屏记账</string>
             </dict>
         </dict>
 
-        <!-- ⑧ 删除截屏 -->
+        <!-- ⑥ 删除刚才的截屏（清理相册） -->
         <dict>
             <key>WFWorkflowActionIdentifier</key>
             <string>is.workflow.actions.deletephotos</string>
