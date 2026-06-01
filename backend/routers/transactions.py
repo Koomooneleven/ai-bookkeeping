@@ -1,9 +1,10 @@
 from datetime import date
 from typing import Optional
-from fastapi import APIRouter, Depends, HTTPException, Header, Form
+from fastapi import APIRouter, Depends, HTTPException, Header, Request
 from database import get_db
 from models import TransactionCreate, TransactionUpdate, TransactionOut, APIResponse
 from ai_parser import parse_transaction
+import json
 
 router = APIRouter(prefix="/transactions", tags=["transactions"])
 
@@ -16,14 +17,42 @@ async def verify_api_key(x_api_key: str = Header(...)):
     return x_api_key
 
 
+async def extract_text(request: Request) -> str:
+    """从请求中提取text字段，兼容JSON和表单两种格式"""
+    content_type = request.headers.get("content-type", "")
+
+    if "application/json" in content_type:
+        body = await request.json()
+        return body.get("text", "")
+    elif "application/x-www-form-urlencoded" in content_type:
+        form = await request.form()
+        return form.get("text", "")
+    else:
+        body_bytes = await request.body()
+        body_text = body_bytes.decode("utf-8").strip()
+        if body_text.startswith("{"):
+            data = json.loads(body_text)
+            return data.get("text", "")
+        elif "text=" in body_text or "&" in body_text:
+            from urllib.parse import parse_qs
+            parsed = parse_qs(body_text)
+            return parsed.get("text", [""])[0]
+        else:
+            return body_text
+
+
 @router.post("", response_model=APIResponse)
 async def create_transaction(
-    body: TransactionCreate,
+    request: Request,
     db=Depends(get_db),
     _=Depends(verify_api_key),
 ):
+    text = await extract_text(request)
+    if not text:
+        return APIResponse(success=False, error="未收到输入内容，请检查快捷指令配置")
+
     try:
-        parsed = await parse_transaction(body.text)
+        parsed = await parse_transaction(text)
     except ValueError as e:
         return APIResponse(success=False, error=str(e))
     except Exception as e:
@@ -40,39 +69,6 @@ async def create_transaction(
             parsed.date,
             parsed.notes,
         ),
-    )
-    await db.commit()
-    return APIResponse(
-        success=True,
-        data={
-            "id": cursor.lastrowid,
-            "amount": parsed.amount,
-            "currency": parsed.currency,
-            "item_name": parsed.item_name,
-            "category": parsed.category,
-            "trans_date": parsed.date,
-        },
-    )
-
-
-@router.post("/form", response_model=APIResponse)
-async def create_transaction_form(
-    text: str = Form(...),
-    db=Depends(get_db),
-    _=Depends(verify_api_key),
-):
-    """兼容 iPhone 快捷指令的表单格式提交"""
-    try:
-        parsed = await parse_transaction(text)
-    except ValueError as e:
-        return APIResponse(success=False, error=str(e))
-    except Exception as e:
-        return APIResponse(success=False, error=f"AI解析失败: {str(e)}")
-
-    cursor = await db.execute(
-        """INSERT INTO transactions (amount, currency, item_name, category, trans_date, notes)
-           VALUES (?, ?, ?, ?, ?, ?)""",
-        (parsed.amount, parsed.currency, parsed.item_name, parsed.category, parsed.date, parsed.notes),
     )
     await db.commit()
     return APIResponse(
