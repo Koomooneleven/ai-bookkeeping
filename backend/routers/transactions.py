@@ -1,6 +1,6 @@
 from datetime import date
 from typing import Optional
-from fastapi import APIRouter, Depends, HTTPException, Header
+from fastapi import APIRouter, Depends, HTTPException, Header, Form
 from database import get_db
 from models import TransactionCreate, TransactionUpdate, TransactionOut, APIResponse
 from ai_parser import parse_transaction
@@ -40,6 +40,39 @@ async def create_transaction(
             parsed.date,
             parsed.notes,
         ),
+    )
+    await db.commit()
+    return APIResponse(
+        success=True,
+        data={
+            "id": cursor.lastrowid,
+            "amount": parsed.amount,
+            "currency": parsed.currency,
+            "item_name": parsed.item_name,
+            "category": parsed.category,
+            "trans_date": parsed.date,
+        },
+    )
+
+
+@router.post("/form", response_model=APIResponse)
+async def create_transaction_form(
+    text: str = Form(...),
+    db=Depends(get_db),
+    _=Depends(verify_api_key),
+):
+    """兼容 iPhone 快捷指令的表单格式提交"""
+    try:
+        parsed = await parse_transaction(text)
+    except ValueError as e:
+        return APIResponse(success=False, error=str(e))
+    except Exception as e:
+        return APIResponse(success=False, error=f"AI解析失败: {str(e)}")
+
+    cursor = await db.execute(
+        """INSERT INTO transactions (amount, currency, item_name, category, trans_date, notes)
+           VALUES (?, ?, ?, ?, ?, ?)""",
+        (parsed.amount, parsed.currency, parsed.item_name, parsed.category, parsed.date, parsed.notes),
     )
     await db.commit()
     return APIResponse(
