@@ -1,0 +1,107 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>WFWorkflowActions</key>
+    <array>
+        <!-- ① 弹出文本输入框 -->
+        <dict>
+            <key>WFWorkflowActionIdentifier</key>
+            <string>is.workflow.actions.ask</string>
+            <key>WFWorkflowActionParameters</key>
+            <dict>
+                <key>WFAskActionPrompt</key>
+                <string>输入消费内容</string>
+                <key>WFInputType</key>
+                <string>WFDictionaryFieldText</string>
+            </dict>
+        </dict>
+
+        <!-- ② 设置请求体 JSON -->
+        <dict>
+            <key>WFWorkflowActionIdentifier</key>
+            <string>is.workflow.actions.dictionary</string>
+            <key>WFWorkflowActionParameters</key>
+            <dict>
+                <key>WFItems</key>
+                <dict>
+                    <key>text</key>
+                    <dict>
+                        <key>Value</key>
+                        <dict>
+                            <key>OutputUUID</key>
+                            <string>${AskOutput}</string>
+                        </dict>
+                        <key>WFDictionaryFieldKey</key>
+                        <string>text</string>
+                        <key>WFSerializationType</key>
+                        <string>WFTextTokenAttachment</string>
+                    </dict>
+                </dict>
+            </dict>
+        </dict>
+
+        <!-- ③ HTTP POST 请求 -->
+        <dict>
+            <key>WFWorkflowActionIdentifier</key>
+            <string>is.workflow.actions.getcontentsofurl</string>
+            <key>WFWorkflowActionParameters</key>
+            <dict>
+                <key>WFHTTPMethod</key>
+                <string>POST</string>
+                <key>WFHTTPBodyType</key>
+                <string>WFFormValue</string>
+                <key>WFHTTPHeaders</key>
+                <dict>
+                    <key>Content-Type</key>
+                    <string>application/json</string>
+                    <key>X-API-Key</key>
+                    <string>YOUR_API_KEY_HERE</string>
+                </dict>
+                <key>WFURL</key>
+                <string>https://YOUR_DOMAIN_HERE/api/transactions</string>
+            </dict>
+        </dict>
+
+        <!-- ④ 显示结果通知 -->
+        <dict>
+            <key>WFWorkflowActionIdentifier</key>
+            <string>is.workflow.actions.notification</string>
+            <key>WFWorkflowActionParameters</key>
+            <dict>
+                <key>WFNotificationActionBody</key>
+                <string>记账成功</string>
+                <key>WFNotificationActionTitle</key>
+                <string>AI 记账</string>
+            </dict>
+        </dict>
+    </array>
+
+    <key>WFWorkflowClientVersion</key>
+    <string>900.0</string>
+    <key>WFWorkflowIcon</key>
+    <dict>
+        <key>WFWorkflowIconStartColor</key>
+        <integer>4282601983</integer>
+        <key>WFWorkflowIconGlyphNumber</key>
+        <integer>59648</integer>
+    </dict>
+    <key>WFWorkflowImportQuestions</key>
+    <array>
+        <dict>
+            <key>Category</key>
+            <string>Parameter</string>
+            <key>ActionIndex</key>
+            <integer>2</integer>
+            <key>ParameterKey</key>
+            <string>WFURL</string>
+            <key>Text</key>
+            <string>请输入服务器地址</string>
+            <key>DefaultValue</key>
+            <string>https://YOUR_DOMAIN_HERE</string>
+        </dict>
+    </array>
+    <key>WFWorkflowName</key>
+    <string>AI 自动记账</string>
+</dict>
+</plist>

@@ -1,0 +1,320 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AI 记账助手</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
+<style>
+  .card { @apply bg-white rounded-xl shadow-sm border border-gray-100 p-5; }
+</style>
+</head>
+<body class="bg-gray-50 min-h-screen text-gray-800">
+
+<!-- Header -->
+<header class="bg-white border-b border-gray-200 sticky top-0 z-10">
+  <div class="max-w-6xl mx-auto px-4 py-3 flex items-center justify-between">
+    <h1 class="text-xl font-bold">🤖 AI 记账助手</h1>
+    <div class="flex items-center gap-3">
+      <span id="monthlyTotal" class="text-sm bg-gray-100 px-3 py-1 rounded-full font-medium">本月 --</span>
+      <button onclick="showApiKeyModal()" class="text-sm text-gray-500 hover:text-gray-700 underline">设置</button>
+    </div>
+  </div>
+</header>
+
+<main class="max-w-6xl mx-auto px-4 py-6 space-y-6">
+
+  <!-- Quick Entry -->
+  <div class="card">
+    <div class="flex gap-3 items-end">
+      <div class="flex-1">
+        <label class="block text-sm font-medium text-gray-600 mb-1">快速录入</label>
+        <input id="entryInput" type="text" placeholder="例如：午餐麦当劳35元"
+               class="w-full border border-gray-300 rounded-lg px-4 py-2.5 focus:ring-2 focus:ring-blue-400 focus:border-transparent outline-none text-sm"
+               autofocus>
+      </div>
+      <button onclick="submitEntry()" id="submitBtn"
+              class="bg-blue-600 text-white px-6 py-2.5 rounded-lg font-medium text-sm hover:bg-blue-700 active:scale-95 transition whitespace-nowrap">
+        记录
+      </button>
+    </div>
+    <p id="entryMsg" class="text-xs mt-2 hidden"></p>
+  </div>
+
+  <!-- Charts Row -->
+  <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+    <div class="card">
+      <h3 class="text-sm font-semibold text-gray-500 mb-3">月度趋势</h3>
+      <canvas id="trendChart" height="220"></canvas>
+    </div>
+    <div class="card">
+      <h3 class="text-sm font-semibold text-gray-500 mb-3">分类支出</h3>
+      <canvas id="categoryChart" height="220"></canvas>
+    </div>
+  </div>
+
+  <!-- Transaction List -->
+  <div class="card">
+    <div class="flex justify-between items-center mb-4">
+      <h3 class="text-sm font-semibold text-gray-500">最近账单</h3>
+      <button onclick="exportCSV()" class="text-xs text-blue-600 hover:underline">导出 CSV</button>
+    </div>
+    <div class="overflow-x-auto">
+      <table class="w-full text-sm">
+        <thead>
+          <tr class="text-left text-gray-400 border-b">
+            <th class="pb-2 font-medium">日期</th>
+            <th class="pb-2 font-medium">分类</th>
+            <th class="pb-2 font-medium">名称</th>
+            <th class="pb-2 font-medium text-right">金额</th>
+            <th class="pb-2 font-medium text-right w-16">操作</th>
+          </tr>
+        </thead>
+        <tbody id="txTableBody"></tbody>
+      </table>
+    </div>
+    <div class="flex justify-between items-center mt-4">
+      <span id="pageInfo" class="text-xs text-gray-400"></span>
+      <div class="flex gap-2">
+        <button onclick="prevPage()" id="prevBtn" class="text-xs px-3 py-1 border rounded hover:bg-gray-50 disabled:opacity-30">上一页</button>
+        <button onclick="nextPage()" id="nextBtn" class="text-xs px-3 py-1 border rounded hover:bg-gray-50 disabled:opacity-30">下一页</button>
+      </div>
+    </div>
+  </div>
+</main>
+
+<!-- API Key Modal -->
+<div id="apiKeyModal" class="fixed inset-0 bg-black/40 flex items-center justify-center z-50 hidden">
+  <div class="bg-white rounded-xl p-6 w-80 shadow-xl">
+    <h3 class="font-semibold mb-3">输入 API Key</h3>
+    <input id="apiKeyInput" type="password" placeholder="your-api-key"
+           class="w-full border rounded-lg px-3 py-2 text-sm mb-4">
+    <div class="flex justify-end gap-2">
+      <button onclick="hideApiKeyModal()" class="px-4 py-1.5 text-sm text-gray-500 hover:bg-gray-50 rounded">取消</button>
+      <button onclick="saveApiKey()" class="px-4 py-1.5 text-sm bg-blue-600 text-white rounded hover:bg-blue-700">保存</button>
+    </div>
+  </div>
+</div>
+
+<script>
+let currentPage = 1;
+let pageSize = 20;
+let trendChart, categoryChart;
+
+function getApiKey() {
+  return localStorage.getItem('accounting_api_key') || '';
+}
+
+function apiHeaders() {
+  return {
+    'X-API-Key': getApiKey(),
+    'Content-Type': 'application/json'
+  };
+}
+
+async function apiFetch(url, opts = {}) {
+  if (!opts.headers) opts.headers = {};
+  opts.headers['X-API-Key'] = getApiKey();
+  if (!opts.headers['Content-Type'] && opts.method && opts.method !== 'GET') {
+    opts.headers['Content-Type'] = 'application/json';
+  }
+  const resp = await fetch(url, opts);
+  if (resp.status === 403) {
+    alert('API Key 无效，请在设置中配置');
+    showApiKeyModal();
+    throw new Error('unauthorized');
+  }
+  return resp;
+}
+
+// Entry submit
+async function submitEntry() {
+  const input = document.getElementById('entryInput');
+  const btn = document.getElementById('submitBtn');
+  const msg = document.getElementById('entryMsg');
+  const text = input.value.trim();
+  if (!text) return;
+
+  btn.disabled = true;
+  btn.textContent = '解析中...';
+  msg.classList.add('hidden');
+
+  try {
+    const resp = await apiFetch('/api/transactions', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({text})
+    });
+    const data = await resp.json();
+    msg.classList.remove('hidden');
+    if (data.success) {
+      msg.className = 'text-xs mt-2 text-green-600';
+      msg.textContent = `✅ 已记录：${data.data.item_name} ${data.data.currency} ${data.data.amount}`;
+      input.value = '';
+      loadAll();
+    } else {
+      msg.className = 'text-xs mt-2 text-red-500';
+      msg.textContent = `❌ ${data.error}`;
+    }
+  } catch (e) {
+    if (e.message !== 'unauthorized') {
+      msg.classList.remove('hidden');
+      msg.className = 'text-xs mt-2 text-red-500';
+      msg.textContent = '网络错误，请重试';
+    }
+  } finally {
+    btn.disabled = false;
+    btn.textContent = '记录';
+  }
+}
+
+// Allow Enter to submit
+document.getElementById('entryInput').addEventListener('keydown', e => {
+  if (e.key === 'Enter') submitEntry();
+});
+
+// Load transactions
+async function loadTransactions() {
+  const resp = await apiFetch(`/api/transactions?page=${currentPage}&page_size=${pageSize}`);
+  const { data } = await resp.json();
+  const tbody = document.getElementById('txTableBody');
+
+  if (!data.items.length) {
+    tbody.innerHTML = `<tr><td colspan="5" class="py-8 text-center text-gray-300">暂无账单记录</td></tr>`;
+  } else {
+    tbody.innerHTML = data.items.map(tx => `
+      <tr class="border-b border-gray-50 hover:bg-gray-50">
+        <td class="py-2 text-gray-500">${tx.trans_date}</td>
+        <td class="py-2">${tx.category || '其他'}</td>
+        <td class="py-2 font-medium">${escapeHtml(tx.item_name)}</td>
+        <td class="py-2 text-right font-mono">${tx.currency} ${tx.amount.toFixed(2)}</td>
+        <td class="py-2 text-right">
+          <button onclick="deleteTx(${tx.id})" class="text-red-400 hover:text-red-600 text-xs">删除</button>
+        </td>
+      </tr>`).join('');
+  }
+
+  document.getElementById('pageInfo').textContent =
+    `共 ${data.total} 条 · 第 ${data.page} 页`;
+  document.getElementById('prevBtn').disabled = currentPage <= 1;
+  document.getElementById('nextBtn').disabled = currentPage * pageSize >= data.total;
+}
+
+async function deleteTx(id) {
+  if (!confirm('确定删除这条记录？')) return;
+  await apiFetch(`/api/transactions/${id}`, {method: 'DELETE'});
+  loadAll();
+}
+
+function prevPage() { if (currentPage > 1) { currentPage--; loadTransactions(); } }
+function nextPage() { currentPage++; loadTransactions(); }
+
+function escapeHtml(str) {
+  const div = document.createElement('div');
+  div.textContent = str;
+  return div.innerHTML;
+}
+
+// Charts
+async function loadCharts() {
+  // Trend
+  const trendResp = await apiFetch('/api/stats/trend');
+  const trendData = (await trendResp.json()).data;
+
+  const months = trendData.map(d => d.month);
+  const totals = trendData.map(d => d.total);
+
+  if (trendChart) trendChart.destroy();
+  const tCtx = document.getElementById('trendChart').getContext('2d');
+  trendChart = new Chart(tCtx, {
+    type: 'line',
+    data: {
+      labels: months.length ? months : ['暂无'],
+      datasets: [{
+        label: '月支出',
+        data: totals.length ? totals : [0],
+        borderColor: '#3B82F6',
+        backgroundColor: 'rgba(59,130,246,0.1)',
+        fill: true,
+        tension: 0.4,
+        pointRadius: 4
+      }]
+    },
+    options: {
+      responsive: true,
+      plugins: { legend: { display: false } },
+      scales: { y: { beginAtZero: true } }
+    }
+  });
+
+  // Category
+  const catResp = await apiFetch('/api/stats/category');
+  const catData = (await catResp.json()).data;
+
+  if (categoryChart) categoryChart.destroy();
+  const cCtx = document.getElementById('categoryChart').getContext('2d');
+  categoryChart = new Chart(cCtx, {
+    type: 'doughnut',
+    data: {
+      labels: catData.length ? catData.map(d => d.category) : ['暂无'],
+      datasets: [{
+        data: catData.length ? catData.map(d => d.total) : [1],
+        backgroundColor: catData.length ? catData.map(d => d.color) : ['#eee']
+      }]
+    },
+    options: {
+      responsive: true,
+      plugins: {
+        legend: { position: 'bottom', labels: { boxWidth: 10, font: { size: 11 } } }
+      }
+    }
+  });
+
+  // Monthly total
+  if (catData.length) {
+    const total = catData.reduce((s, d) => s + d.total, 0).toFixed(0);
+    document.getElementById('monthlyTotal').textContent = `本月支出 ¥${total}`;
+  }
+}
+
+function loadAll() {
+  loadTransactions();
+  loadCharts();
+}
+
+// API key management
+function showApiKeyModal() {
+  document.getElementById('apiKeyInput').value = getApiKey();
+  document.getElementById('apiKeyModal').classList.remove('hidden');
+}
+function hideApiKeyModal() {
+  document.getElementById('apiKeyModal').classList.add('hidden');
+}
+function saveApiKey() {
+  const key = document.getElementById('apiKeyInput').value.trim();
+  localStorage.setItem('accounting_api_key', key);
+  hideApiKeyModal();
+  loadAll();
+}
+
+async function exportCSV() {
+  const resp = await apiFetch('/api/stats/export/csv');
+  const blob = await resp.blob();
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'accounting_export.csv';
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+// Init
+if (!getApiKey()) {
+  showApiKeyModal();
+} else {
+  loadAll();
+}
+</script>
+</body>
+</html>
