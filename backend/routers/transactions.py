@@ -22,7 +22,13 @@ async def create_transaction(
     db=Depends(get_db),
     _=Depends(verify_api_key),
 ):
-    parsed = await parse_transaction(body.text)
+    try:
+        parsed = await parse_transaction(body.text)
+    except ValueError as e:
+        return APIResponse(success=False, error=str(e))
+    except Exception as e:
+        return APIResponse(success=False, error=f"AI解析失败: {str(e)}")
+
     cursor = await db.execute(
         """INSERT INTO transactions (amount, currency, item_name, category, trans_date, notes)
            VALUES (?, ?, ?, ?, ?, ?)""",
