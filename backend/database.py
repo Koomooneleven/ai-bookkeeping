@@ -24,7 +24,7 @@ async def init_db():
             currency    VARCHAR(10) NOT NULL DEFAULT 'CNY',
             item_name   VARCHAR(255) NOT NULL,
             category    VARCHAR(50),
-            trans_date  DATE        NOT NULL,
+            trans_date  TEXT        NOT NULL,  -- YYYY-MM-DD HH:MM 格式
             notes       TEXT,
             created_at  DATETIME    DEFAULT CURRENT_TIMESTAMP
         );

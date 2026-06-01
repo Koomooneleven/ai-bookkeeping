@@ -1,0 +1,104 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>WFWorkflowName</key>
+    <string>AI自动记账-截屏</string>
+
+    <key>WFWorkflowActions</key>
+    <array>
+        <!-- ① 截屏 -->
+        <dict>
+            <key>WFWorkflowActionIdentifier</key>
+            <string>is.workflow.actions.takescreenshot</string>
+            <key>WFWorkflowActionParameters</key>
+            <dict/>
+        </dict>
+
+        <!-- ② 等待 -->
+        <dict>
+            <key>WFWorkflowActionIdentifier</key>
+            <string>is.workflow.actions.wait</string>
+            <key>WFWorkflowActionParameters</key>
+            <dict>
+                <key>WFWaitTime</key>
+                <real>1</real>
+            </dict>
+        </dict>
+
+        <!-- ③ 获取最新截屏 -->
+        <dict>
+            <key>WFWorkflowActionIdentifier</key>
+            <string>is.workflow.actions.getlatestphotoimports</string>
+            <key>WFWorkflowActionParameters</key>
+            <dict>
+                <key>WFGetLatestPhotoCount</key>
+                <integer>1</integer>
+            </dict>
+        </dict>
+
+        <!-- ④ 从图像提取文本 (OCR) -->
+        <dict>
+            <key>WFWorkflowActionIdentifier</key>
+            <string>is.workflow.actions.extracttextfromimage</string>
+            <key>WFWorkflowActionParameters</key>
+            <dict/>
+        </dict>
+
+        <!-- ⑤ URL -->
+        <dict>
+            <key>WFWorkflowActionIdentifier</key>
+            <string>is.workflow.actions.url</string>
+            <key>WFWorkflowActionParameters</key>
+            <dict>
+                <key>WFURL</key>
+                <string>https://ai-bookkeeping-production-87a3.up.railway.app/api/transactions</string>
+            </dict>
+        </dict>
+
+        <!-- ⑥ HTTP POST -->
+        <dict>
+            <key>WFWorkflowActionIdentifier</key>
+            <string>is.workflow.actions.getcontentsofurl</string>
+            <key>WFWorkflowActionParameters</key>
+            <dict>
+                <key>WFHTTPMethod</key>
+                <string>POST</string>
+                <key>WFHTTPBodyType</key>
+                <string>WFFormValue</string>
+                <key>WFHTTPHeaders</key>
+                <dict>
+                    <key>X-API-Key</key>
+                    <string>jizhang2026</string>
+                </dict>
+                <key>WFURL</key>
+                <string>https://ai-bookkeeping-production-87a3.up.railway.app/api/transactions</string>
+            </dict>
+        </dict>
+
+        <!-- ⑦ 显示结果 -->
+        <dict>
+            <key>WFWorkflowActionIdentifier</key>
+            <string>is.workflow.actions.notification</string>
+            <key>WFWorkflowActionParameters</key>
+            <dict>
+                <key>WFNotificationActionBody</key>
+                <string>已记录</string>
+                <key>WFNotificationActionTitle</key>
+                <string>AI记账</string>
+            </dict>
+        </dict>
+
+        <!-- ⑧ 删除截屏 -->
+        <dict>
+            <key>WFWorkflowActionIdentifier</key>
+            <string>is.workflow.actions.deletephotos</string>
+            <key>WFWorkflowActionParameters</key>
+            <dict/>
+        </dict>
+    </array>
+
+    <key>WFWorkflowClientVersion</key>
+    <string>900.0</string>
+</dict>
+</plist>

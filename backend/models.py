@@ -1,6 +1,6 @@
 from pydantic import BaseModel, Field
 from typing import Optional
-from datetime import date
+from datetime import datetime
 
 
 class TransactionCreate(BaseModel):
@@ -12,7 +12,7 @@ class TransactionUpdate(BaseModel):
     currency: Optional[str] = None
     item_name: Optional[str] = None
     category: Optional[str] = None
-    trans_date: Optional[date] = None
+    trans_date: Optional[datetime] = None
     notes: Optional[str] = None
 
 
@@ -21,7 +21,7 @@ class ParsedResult(BaseModel):
     currency: str = "CNY"
     item_name: str
     category: str = "其他"
-    date: str
+    date: str  # "YYYY-MM-DD HH:MM" 格式
     notes: str
 
 
@@ -31,7 +31,7 @@ class TransactionOut(BaseModel):
     currency: str
     item_name: str
     category: Optional[str]
-    trans_date: str
+    trans_date: str  # "YYYY-MM-DD HH:MM"
     notes: Optional[str]
     created_at: Optional[str]
 
