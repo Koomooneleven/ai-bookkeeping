@@ -20,25 +20,25 @@ async def verify_api_key(x_api_key: str = Header(...)):
 async def extract_text(request: Request) -> str:
     """从请求中提取text字段，兼容JSON和表单两种格式"""
     content_type = request.headers.get("content-type", "")
+    raw = (await request.body()).decode("utf-8", errors="replace")
 
-    if "application/json" in content_type:
-        body = await request.json()
-        return body.get("text", "")
-    elif "application/x-www-form-urlencoded" in content_type:
-        form = await request.form()
-        return form.get("text", "")
-    else:
-        body_bytes = await request.body()
-        body_text = body_bytes.decode("utf-8").strip()
-        if body_text.startswith("{"):
-            data = json.loads(body_text)
+    if "application/json" in content_type or raw.strip().startswith("{"):
+        try:
+            data = json.loads(raw)
             return data.get("text", "")
-        elif "text=" in body_text or "&" in body_text:
-            from urllib.parse import parse_qs
-            parsed = parse_qs(body_text)
+        except json.JSONDecodeError:
+            pass
+
+    if "application/x-www-form-urlencoded" in content_type or "=" in raw:
+        from urllib.parse import parse_qs
+        try:
+            parsed = parse_qs(raw)
             return parsed.get("text", [""])[0]
-        else:
-            return body_text
+        except Exception:
+            pass
+
+    # 纯文本直接当作消费内容
+    return raw.strip()
 
 
 @router.post("", response_model=APIResponse)
@@ -49,14 +49,14 @@ async def create_transaction(
 ):
     text = await extract_text(request)
     if not text:
-        return APIResponse(success=False, error="未收到输入内容，请检查快捷指令配置")
+        return APIResponse(success=False, error="未收到输入内容，请检查快捷指令中text字段是否正确绑定")
 
     try:
         parsed = await parse_transaction(text)
     except ValueError as e:
-        return APIResponse(success=False, error=str(e))
+        return APIResponse(success=False, error=f"收到: [{text}] → {str(e)}")
     except Exception as e:
-        return APIResponse(success=False, error=f"AI解析失败: {str(e)}")
+        return APIResponse(success=False, error=f"收到: [{text}] → AI错误: {str(e)}")
 
     cursor = await db.execute(
         """INSERT INTO transactions (amount, currency, item_name, category, trans_date, notes)
