@@ -464,7 +464,7 @@ function getYearMonth() {
   if (m === 'all') return { month: null, start: '', end: '' };
   const start = `${y}-${m.padStart(2,'0')}-01`;
   const lastDay = new Date(+y, +m, 0).getDate();
-  const end = `${y}-${m.padStart(2,'0')}-${String(lastDay).padStart(2,'0')}`;
+  const end = `${y}-${m.padStart(2,'0')}-${String(lastDay).padStart(2,'0')} 23:59:59`;
   return { month: `${y}-${m.padStart(2,'0')}`, start, end };
 }
 async function updateMonthlyTotal() {
