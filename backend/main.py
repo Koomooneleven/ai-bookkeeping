@@ -4,7 +4,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse
 
 from database import init_db
-from routers import transactions, stats
+from routers import transactions, stats, categories
 
 
 @asynccontextmanager
@@ -24,6 +24,7 @@ app.add_middleware(
 
 app.include_router(transactions.router, prefix="/api")
 app.include_router(stats.router, prefix="/api")
+app.include_router(categories.router, prefix="/api")
 
 
 @app.get("/dashboard")

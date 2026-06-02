@@ -110,3 +110,68 @@ async def export_csv(
         media_type="text/csv",
         headers={"Content-Disposition": "attachment; filename=accounting_export.csv"},
     )
+
+
+@router.get("/daily")
+async def daily_stats(
+    month: str = None,
+    db=Depends(get_db),
+    _=Depends(verify_api_key),
+):
+    """每日支出数据，用于热力图。month 格式 YYYY-MM"""
+    if not month:
+        month_query = "strftime('%Y-%m', 'now')"
+        params = []
+    else:
+        month_query = "?"
+        params = [month]
+
+    rows = await db.execute_fetchall(
+        f"""SELECT date(trans_date) as day, SUM(amount) as total, COUNT(*) as count
+            FROM transactions
+            WHERE strftime('%Y-%m', trans_date) = {month_query}
+            GROUP BY day
+            ORDER BY day""",
+        params,
+    )
+    return {"success": True, "data": [dict(r) for r in rows]}
+
+
+@router.get("/ranking")
+async def ranking_stats(
+    period: str = "month",
+    limit: int = 5,
+    db=Depends(get_db),
+    _=Depends(verify_api_key),
+):
+    """支出排行：按分类和按商家"""
+    if period == "week":
+        date_filter = "trans_date >= date('now', '-7 days')"
+    elif period == "year":
+        date_filter = "trans_date >= date('now', '-1 year')"
+    else:
+        date_filter = "strftime('%Y-%m', trans_date) = strftime('%Y-%m', 'now')"
+
+    # 按分类排行
+    cat_rows = await db.execute_fetchall(
+        f"""SELECT category, SUM(amount) as total, COUNT(*) as count
+            FROM transactions WHERE {date_filter}
+            GROUP BY category ORDER BY total DESC LIMIT ?""",
+        [limit],
+    )
+
+    # 按商家排行
+    item_rows = await db.execute_fetchall(
+        f"""SELECT item_name, SUM(amount) as total, COUNT(*) as count
+            FROM transactions WHERE {date_filter}
+            GROUP BY item_name ORDER BY total DESC LIMIT ?""",
+        [limit],
+    )
+
+    return {
+        "success": True,
+        "data": {
+            "by_category": [dict(r) for r in cat_rows],
+            "by_item": [dict(r) for r in item_rows],
+        },
+    }

@@ -91,6 +91,8 @@ async def list_transactions(
     date_from: Optional[str] = None,
     date_to: Optional[str] = None,
     category: Optional[str] = None,
+    sort: Optional[str] = "date_desc",
+    search: Optional[str] = None,
     db=Depends(get_db),
     _=Depends(verify_api_key),
 ):
@@ -106,17 +108,28 @@ async def list_transactions(
     if category:
         conditions.append("category = ?")
         params.append(category)
+    if search:
+        conditions.append("(item_name LIKE ? OR notes LIKE ?)")
+        params.extend([f"%{search}%", f"%{search}%"])
 
     where = ("WHERE " + " AND ".join(conditions)) if conditions else ""
 
     count_row = await db.execute_fetchall(f"SELECT COUNT(*) as c FROM transactions {where}", params)
     total = count_row[0]["c"]
 
+    sort_map = {
+        "date_desc": "trans_date DESC, created_at DESC",
+        "date_asc": "trans_date ASC, created_at ASC",
+        "amount_desc": "amount DESC",
+        "amount_asc": "amount ASC",
+    }
+    order = sort_map.get(sort, "trans_date DESC, created_at DESC")
+
     offset = (page - 1) * page_size
     params.extend([page_size, offset])
     rows = await db.execute_fetchall(
         f"""SELECT * FROM transactions {where}
-            ORDER BY trans_date DESC, created_at DESC
+            ORDER BY {order}
             LIMIT ? OFFSET ?""",
         params,
     )

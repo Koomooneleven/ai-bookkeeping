@@ -7,314 +7,503 @@
 <script src="https://cdn.tailwindcss.com"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
 <style>
-  .card { @apply bg-white rounded-xl shadow-sm border border-gray-100 p-5; }
+:root {
+  --bg: #f1f5f9; --card: #ffffff; --text: #1e293b; --text2: #64748b;
+  --border: #e2e8f0; --accent: #3b82f6; --danger: #ef4444; --hover: #f8fafc;
+}
+.dark {
+  --bg: #0f172a; --card: #1e293b; --text: #f1f5f9; --text2: #94a3b8;
+  --border: #334155; --accent: #60a5fa; --danger: #f87171; --hover: #1e293b;
+}
+body { background: var(--bg); color: var(--text); font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
+.card { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 16px; }
+.btn { padding: 8px 16px; border-radius: 8px; font-size: 14px; cursor: pointer; transition: all .2s; border: none; }
+.btn-accent { background: var(--accent); color: #fff; }
+.btn-accent:hover { opacity: .9; }
+.btn-ghost { background: transparent; color: var(--text2); }
+.btn-ghost:hover { background: var(--hover); }
+.btn-danger { background: transparent; color: var(--danger); }
+.btn-danger:hover { background: #fef2f2; }
+.input { width: 100%; padding: 10px 12px; border: 1px solid var(--border); border-radius: 8px; background: var(--card); color: var(--text); font-size: 14px; outline: none; }
+.input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(59,130,246,.15); }
+select.input { appearance: none; cursor: pointer; }
+.tab-bar { position: fixed; bottom: 0; left: 0; right: 0; background: var(--card); border-top: 1px solid var(--border); display: flex; z-index: 40; padding: 4px 0 env(safe-area-inset-bottom, 8px); }
+.tab-item { flex: 1; text-align: center; padding: 6px 0; font-size: 11px; color: var(--text2); cursor: pointer; transition: .2s; }
+.tab-item.active { color: var(--accent); font-weight: 600; }
+.tab-item .tab-icon { font-size: 20px; display: block; margin-bottom: 2px; }
+.tag { display: inline-block; padding: 2px 8px; border-radius: 12px; font-size: 11px; font-weight: 500; }
+.modal { position: fixed; inset: 0; background: rgba(0,0,0,.5); z-index: 50; display: flex; align-items: center; justify-content: center; }
+.modal-content { background: var(--card); border-radius: 16px; padding: 24px; width: 90%; max-width: 420px; max-height: 80vh; overflow-y: auto; }
+.modal-content select { background: var(--card); color: var(--text); border: 1px solid var(--border); border-radius: 6px; padding: 6px 10px; font-size: 14px; }
+.heat-cell { border-radius: 4px; transition: .2s; cursor: default; }
+.heat-cell:hover { transform: scale(1.2); }
+.skeleton { animation: pulse 1.5s infinite; background: linear-gradient(90deg, var(--border) 25%, transparent 50%, var(--border) 75%); background-size: 200% 100%; }
+@keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: .5; } }
 </style>
 </head>
-<body class="bg-gray-50 min-h-screen text-gray-800">
+<body class="min-h-screen pb-20">
 
-<!-- Header -->
-<header class="bg-white border-b border-gray-200 sticky top-0 z-10">
-  <div class="max-w-6xl mx-auto px-4 py-3 flex items-center justify-between">
-    <h1 class="text-xl font-bold">🤖 AI 记账助手</h1>
-    <div class="flex items-center gap-3">
-      <span id="monthlyTotal" class="text-sm bg-gray-100 px-3 py-1 rounded-full font-medium">本月 --</span>
-      <button onclick="showApiKeyModal()" class="text-sm text-gray-500 hover:text-gray-700 underline">设置</button>
-    </div>
+<!-- ==================== 登录页 ==================== -->
+<div id="loginScreen" class="min-h-screen flex items-center justify-center hidden">
+  <div class="card w-full max-w-sm text-center">
+    <div class="text-4xl mb-4">🤖</div>
+    <h2 class="text-xl font-bold mb-1" data-i18n="loginTitle">AI 记账助手</h2>
+    <p class="text-sm text-[var(--text2)] mb-4" data-i18n="loginSub">输入密码解锁仪表盘</p>
+    <input id="loginPwd" type="password" class="input mb-3" placeholder="密码">
+    <button class="btn btn-accent w-full" onclick="doLogin()" data-i18n="loginBtn">解锁</button>
+    <p id="loginMsg" class="text-xs text-red-500 mt-2 hidden"></p>
   </div>
-</header>
+</div>
 
-<main class="max-w-6xl mx-auto px-4 py-6 space-y-6">
+<!-- ==================== 主应用 ==================== -->
+<div id="appScreen" class="max-w-2xl mx-auto px-4 pt-4">
 
-  <!-- Quick Entry -->
-  <div class="card">
-    <div class="flex gap-3 items-end">
-      <div class="flex-1">
-        <label class="block text-sm font-medium text-gray-600 mb-1">快速录入</label>
-        <input id="entryInput" type="text" placeholder="例如：午餐麦当劳35元"
-               class="w-full border border-gray-300 rounded-lg px-4 py-2.5 focus:ring-2 focus:ring-blue-400 focus:border-transparent outline-none text-sm"
-               autofocus>
-      </div>
-      <button onclick="submitEntry()" id="submitBtn"
-              class="bg-blue-600 text-white px-6 py-2.5 rounded-lg font-medium text-sm hover:bg-blue-700 active:scale-95 transition whitespace-nowrap">
-        记录
-      </button>
+  <!-- 顶部栏 -->
+  <div class="flex items-center justify-between mb-4">
+    <div class="flex items-center gap-2">
+      <select id="selYear" class="input text-sm w-20" onchange="loadCurrentTab()"></select>
+      <select id="selMonth" class="input text-sm w-16" onchange="loadCurrentTab()"><option value="all" data-i18n="allMonths">全部</option></select>
     </div>
-    <p id="entryMsg" class="text-xs mt-2 hidden"></p>
-  </div>
-
-  <!-- Charts Row -->
-  <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-    <div class="card">
-      <h3 class="text-sm font-semibold text-gray-500 mb-3">月度趋势</h3>
-      <canvas id="trendChart" height="220"></canvas>
-    </div>
-    <div class="card">
-      <h3 class="text-sm font-semibold text-gray-500 mb-3">分类支出</h3>
-      <canvas id="categoryChart" height="220"></canvas>
+    <div class="text-right">
+      <div class="text-xs text-[var(--text2)]" data-i18n="monthlyTotal">本月支出</div>
+      <div id="monthlyTotal" class="text-lg font-bold">¥ --</div>
     </div>
   </div>
 
-  <!-- Transaction List -->
-  <div class="card">
-    <div class="flex justify-between items-center mb-4">
-      <h3 class="text-sm font-semibold text-gray-500">最近账单</h3>
-      <button onclick="exportCSV()" class="text-xs text-blue-600 hover:underline">导出 CSV</button>
-    </div>
-    <div class="overflow-x-auto">
-      <table class="w-full text-sm">
-        <thead>
-          <tr class="text-left text-gray-400 border-b">
-            <th class="pb-2 font-medium">时间</th>
-            <th class="pb-2 font-medium">分类</th>
-            <th class="pb-2 font-medium">名称</th>
-            <th class="pb-2 font-medium text-right">金额</th>
-            <th class="pb-2 font-medium text-right w-16">操作</th>
-          </tr>
-        </thead>
-        <tbody id="txTableBody"></tbody>
-      </table>
-    </div>
-    <div class="flex justify-between items-center mt-4">
-      <span id="pageInfo" class="text-xs text-gray-400"></span>
-      <div class="flex gap-2">
-        <button onclick="prevPage()" id="prevBtn" class="text-xs px-3 py-1 border rounded hover:bg-gray-50 disabled:opacity-30">上一页</button>
-        <button onclick="nextPage()" id="nextBtn" class="text-xs px-3 py-1 border rounded hover:bg-gray-50 disabled:opacity-30">下一页</button>
-      </div>
-    </div>
-  </div>
-</main>
+  <!-- Tab 内容区 -->
+  <div id="tabContent" class="space-y-3"></div>
+</div>
 
-<!-- API Key Modal -->
-<div id="apiKeyModal" class="fixed inset-0 bg-black/40 flex items-center justify-center z-50 hidden">
-  <div class="bg-white rounded-xl p-6 w-80 shadow-xl">
-    <h3 class="font-semibold mb-3">输入 API Key</h3>
-    <input id="apiKeyInput" type="password" placeholder="your-api-key"
-           class="w-full border rounded-lg px-3 py-2 text-sm mb-4">
-    <div class="flex justify-end gap-2">
-      <button onclick="hideApiKeyModal()" class="px-4 py-1.5 text-sm text-gray-500 hover:bg-gray-50 rounded">取消</button>
-      <button onclick="saveApiKey()" class="px-4 py-1.5 text-sm bg-blue-600 text-white rounded hover:bg-blue-700">保存</button>
+<!-- ==================== 底部导航 ==================== -->
+<nav class="tab-bar">
+  <div class="tab-item active" data-tab="feed">
+    <span class="tab-icon">📋</span><span data-i18n="tabFeed">流水</span>
+  </div>
+  <div class="tab-item" data-tab="details">
+    <span class="tab-icon">📝</span><span data-i18n="tabDetails">明细</span>
+  </div>
+  <div class="tab-item" data-tab="stats">
+    <span class="tab-icon">📊</span><span data-i18n="tabStats">统计</span>
+  </div>
+  <div class="tab-item" data-tab="settings">
+    <span class="tab-icon">⚙️</span><span data-i18n="tabSettings">设置</span>
+  </div>
+</nav>
+
+<!-- ==================== 编辑弹窗 ==================== -->
+<div id="editModal" class="modal hidden">
+  <div class="modal-content">
+    <h3 class="font-bold text-lg mb-4" data-i18n="editTitle">编辑账单</h3>
+    <input type="hidden" id="editId">
+    <label class="block text-xs text-[var(--text2)] mb-1" data-i18n="fieldName">名称</label>
+    <input id="editName" class="input mb-3">
+    <label class="block text-xs text-[var(--text2)] mb-1" data-i18n="fieldAmount">金额</label>
+    <input id="editAmount" type="number" step="0.01" class="input mb-3">
+    <label class="block text-xs text-[var(--text2)] mb-1" data-i18n="fieldCategory">分类</label>
+    <select id="editCategory" class="input mb-3"></select>
+    <label class="block text-xs text-[var(--text2)] mb-1" data-i18n="fieldDate">时间</label>
+    <input id="editDate" type="datetime-local" class="input mb-4">
+    <div class="flex gap-2 justify-end">
+      <button class="btn btn-ghost" onclick="closeEdit()" data-i18n="cancel">取消</button>
+      <button class="btn btn-accent" onclick="saveEdit()" data-i18n="save">保存</button>
     </div>
   </div>
 </div>
 
+<!-- ==================== 分类弹窗 ==================== -->
+<div id="catModal" class="modal hidden">
+  <div class="modal-content">
+    <h3 class="font-bold text-lg mb-4" data-i18n="catTitle">分类管理</h3>
+    <div id="catList" class="space-y-2 mb-4 max-h-60 overflow-y-auto"></div>
+    <div class="flex gap-2 mb-3">
+      <input id="newCatName" class="input flex-1" placeholder="分类名">
+      <input id="newCatIcon" class="input w-16" placeholder="图标" value="📌">
+      <input id="newCatColor" type="color" class="w-10 h-10 rounded cursor-pointer" value="#3b82f6">
+    </div>
+    <button class="btn btn-accent w-full text-sm" onclick="addCategory()">+ 添加分类</button>
+    <button class="btn btn-ghost w-full mt-2 text-sm" onclick="document.getElementById('catModal').classList.add('hidden')" data-i18n="close">关闭</button>
+  </div>
+</div>
+
 <script>
-let currentPage = 1;
-let pageSize = 20;
-let trendChart, categoryChart;
+// ==================== 全局状态 ====================
+const STORE = {
+  theme: localStorage.getItem('acc_theme') || 'light',
+  lang: localStorage.getItem('acc_lang') || 'zh_CN',
+  pwdHash: localStorage.getItem('acc_pwd') || '',
+  loggedIn: localStorage.getItem('acc_logged') === '1',
+  apiKey: localStorage.getItem('accounting_api_key') || '',
+  currentTab: 'feed',
+  currentPage: 1,
+  currentSort: 'date_desc',
+  statsPeriod: 'month',
+};
 
-function getApiKey() {
-  return localStorage.getItem('accounting_api_key') || '';
+// ==================== i18n ====================
+const T = {
+  loginTitle: { zh_CN: 'AI 记账助手', zh_TW: 'AI 記帳助手', en: 'AI Bookkeeper' },
+  loginSub: { zh_CN: '输入密码解锁仪表盘', zh_TW: '輸入密碼解鎖儀表盤', en: 'Enter password to unlock' },
+  loginBtn: { zh_CN: '解锁', zh_TW: '解鎖', en: 'Unlock' },
+  loginFail: { zh_CN: '密码错误', zh_TW: '密碼錯誤', en: 'Wrong password' },
+  monthlyTotal: { zh_CN: '本月支出', zh_TW: '本月支出', en: 'Monthly Spend' },
+  allMonths: { zh_CN: '全部', zh_TW: '全部', en: 'All' },
+  tabFeed: { zh_CN: '流水', zh_TW: '流水', en: 'Feed' },
+  tabDetails: { zh_CN: '明细', zh_TW: '明細', en: 'Details' },
+  tabStats: { zh_CN: '统计', zh_TW: '統計', en: 'Stats' },
+  tabSettings: { zh_CN: '设置', zh_TW: '設置', en: 'Settings' },
+  editTitle: { zh_CN: '编辑账单', zh_TW: '編輯賬單', en: 'Edit Entry' },
+  fieldName: { zh_CN: '名称', zh_TW: '名稱', en: 'Name' },
+  fieldAmount: { zh_CN: '金额', zh_TW: '金額', en: 'Amount' },
+  fieldCategory: { zh_CN: '分类', zh_TW: '分類', en: 'Category' },
+  fieldDate: { zh_CN: '时间', zh_TW: '時間', en: 'Time' },
+  cancel: { zh_CN: '取消', zh_TW: '取消', en: 'Cancel' },
+  save: { zh_CN: '保存', zh_TW: '儲存', en: 'Save' },
+  delete: { zh_CN: '删除', zh_TW: '刪除', en: 'Delete' },
+  edit: { zh_CN: '编辑', zh_TW: '編輯', en: 'Edit' },
+  noData: { zh_CN: '暂无记录', zh_TW: '暫無記錄', en: 'No records' },
+  exportCSV: { zh_CN: '导出 CSV', zh_TW: '匯出 CSV', en: 'Export CSV' },
+  search: { zh_CN: '搜索...', zh_TW: '搜尋...', en: 'Search...' },
+  catTitle: { zh_CN: '分类管理', zh_TW: '分類管理', en: 'Categories' },
+  close: { zh_CN: '关闭', zh_TW: '關閉', en: 'Close' },
+  settingsTheme: { zh_CN: '主题', zh_TW: '主題', en: 'Theme' },
+  themeLight: { zh_CN: '浅色', zh_TW: '淺色', en: 'Light' },
+  themeDark: { zh_CN: '深色', zh_TW: '深色', en: 'Dark' },
+  themeSystem: { zh_CN: '跟随系统', zh_TW: '跟随系統', en: 'System' },
+  settingsLang: { zh_CN: '语言', zh_TW: '語言', en: 'Language' },
+  langCN: { zh_CN: '简体中文', zh_TW: '簡體中文', en: 'Simplified Chinese' },
+  langTW: { zh_CN: '繁體中文', zh_TW: '繁體中文', en: 'Traditional Chinese' },
+  langEN: { zh_CN: 'English', zh_TW: 'English', en: 'English' },
+  settingsAccount: { zh_CN: '账户', zh_TW: '賬戶', en: 'Account' },
+  changePwd: { zh_CN: '修改密码', zh_TW: '修改密碼', en: 'Change Password' },
+  logout: { zh_CN: '退出登录', zh_TW: '退出登錄', en: 'Logout' },
+  settingsCats: { zh_CN: '分类管理', zh_TW: '分類管理', en: 'Manage Categories' },
+  settingsAbout: { zh_CN: '关于', zh_TW: '關於', en: 'About' },
+  week: { zh_CN: '本周', zh_TW: '本週', en: 'Week' },
+  month: { zh_CN: '本月', zh_TW: '本月', en: 'Month' },
+  year: { zh_CN: '本年', zh_TW: '本年', en: 'Year' },
+  totalSpend: { zh_CN: '总支出', zh_TW: '總支出', en: 'Total' },
+  avgDaily: { zh_CN: '日均', zh_TW: '日均', en: 'Daily Avg' },
+  txCount: { zh_CN: '笔数', zh_TW: '筆數', en: 'Count' },
+  rankCat: { zh_CN: '分类排行', zh_TW: '分類排行', en: 'By Category' },
+  rankItem: { zh_CN: '商家排行', zh_TW: '商家排行', en: 'By Merchant' },
+};
+function t(key) { return (T[key]||{})[STORE.lang] || key; }
+function applyI18n() { document.querySelectorAll('[data-i18n]').forEach(el => { const k = el.dataset.i18n; if (el.tagName==='INPUT' && el.placeholder !== undefined) el.placeholder=t(k); else if (el.tagName==='OPTION') el.textContent=t(k); else el.textContent = t(k); }); }
+
+// ==================== 主题 ====================
+function applyTheme() {
+  const h = document.documentElement;
+  if (STORE.theme === 'dark') h.classList.add('dark');
+  else if (STORE.theme === 'light') h.classList.remove('dark');
+  else h.classList.toggle('dark', window.matchMedia('(prefers-color-scheme:dark)').matches);
 }
 
-function apiHeaders() {
-  return {
-    'X-API-Key': getApiKey(),
-    'Content-Type': 'application/json'
-  };
+// ==================== 认证 ====================
+async function hashPwd(p) { const e = new TextEncoder(); const d = await crypto.subtle.digest('SHA-256', e.encode(p)); return [...new Uint8Array(d)].map(b=>b.toString(16).padStart(2,'0')).join(''); }
+function checkAuth() {
+  if (!STORE.pwdHash) { document.getElementById('loginScreen').classList.add('hidden'); document.getElementById('appScreen').classList.remove('hidden'); return true; }
+  if (STORE.loggedIn) { document.getElementById('loginScreen').classList.add('hidden'); document.getElementById('appScreen').classList.remove('hidden'); return true; }
+  document.getElementById('loginScreen').classList.remove('hidden'); document.getElementById('appScreen').classList.add('hidden'); return false;
 }
-
-async function apiFetch(url, opts = {}) {
-  if (!opts.headers) opts.headers = {};
-  opts.headers['X-API-Key'] = getApiKey();
-  if (!opts.headers['Content-Type'] && opts.method && opts.method !== 'GET') {
-    opts.headers['Content-Type'] = 'application/json';
-  }
-  const resp = await fetch(url, opts);
-  if (resp.status === 403) {
-    alert('API Key 无效，请在设置中配置');
-    showApiKeyModal();
-    throw new Error('unauthorized');
-  }
-  return resp;
-}
-
-// Entry submit
-async function submitEntry() {
-  const input = document.getElementById('entryInput');
-  const btn = document.getElementById('submitBtn');
-  const msg = document.getElementById('entryMsg');
-  const text = input.value.trim();
-  if (!text) return;
-
-  btn.disabled = true;
-  btn.textContent = '解析中...';
-  msg.classList.add('hidden');
-
-  try {
-    const resp = await apiFetch('/api/transactions', {
-      method: 'POST',
-      headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({text})
-    });
-    const data = await resp.json();
-    msg.classList.remove('hidden');
-    if (data.success) {
-      msg.className = 'text-xs mt-2 text-green-600';
-      msg.textContent = `✅ 已记录：${data.data.item_name} ${data.data.currency} ${data.data.amount}`;
-      input.value = '';
-      loadAll();
-    } else {
-      msg.className = 'text-xs mt-2 text-red-500';
-      msg.textContent = `❌ ${data.error}`;
-    }
-  } catch (e) {
-    if (e.message !== 'unauthorized') {
-      msg.classList.remove('hidden');
-      msg.className = 'text-xs mt-2 text-red-500';
-      msg.textContent = '网络错误，请重试';
-    }
-  } finally {
-    btn.disabled = false;
-    btn.textContent = '记录';
-  }
-}
-
-// Allow Enter to submit
-document.getElementById('entryInput').addEventListener('keydown', e => {
-  if (e.key === 'Enter') submitEntry();
-});
-
-// Load transactions
-async function loadTransactions() {
-  const resp = await apiFetch(`/api/transactions?page=${currentPage}&page_size=${pageSize}`);
-  const { data } = await resp.json();
-  const tbody = document.getElementById('txTableBody');
-
-  if (!data.items.length) {
-    tbody.innerHTML = `<tr><td colspan="5" class="py-8 text-center text-gray-300">暂无账单记录</td></tr>`;
+async function doLogin() {
+  const pwd = document.getElementById('loginPwd').value;
+  const hash = await hashPwd(pwd);
+  if (hash === STORE.pwdHash) {
+    STORE.loggedIn = true; localStorage.setItem('acc_logged','1');
+    document.getElementById('loginScreen').classList.add('hidden'); document.getElementById('appScreen').classList.remove('hidden'); init();
   } else {
-    tbody.innerHTML = data.items.map(tx => `
-      <tr class="border-b border-gray-50 hover:bg-gray-50">
-        <td class="py-2 text-gray-500">${tx.trans_date}</td>
-        <td class="py-2">${tx.category || '其他'}</td>
-        <td class="py-2 font-medium">${escapeHtml(tx.item_name)}</td>
-        <td class="py-2 text-right font-mono">${tx.currency} ${tx.amount.toFixed(2)}</td>
-        <td class="py-2 text-right">
-          <button onclick="deleteTx(${tx.id})" class="text-red-400 hover:text-red-600 text-xs">删除</button>
-        </td>
-      </tr>`).join('');
-  }
-
-  document.getElementById('pageInfo').textContent =
-    `共 ${data.total} 条 · 第 ${data.page} 页`;
-  document.getElementById('prevBtn').disabled = currentPage <= 1;
-  document.getElementById('nextBtn').disabled = currentPage * pageSize >= data.total;
-}
-
-async function deleteTx(id) {
-  if (!confirm('确定删除这条记录？')) return;
-  await apiFetch(`/api/transactions/${id}`, {method: 'DELETE'});
-  loadAll();
-}
-
-function prevPage() { if (currentPage > 1) { currentPage--; loadTransactions(); } }
-function nextPage() { currentPage++; loadTransactions(); }
-
-function escapeHtml(str) {
-  const div = document.createElement('div');
-  div.textContent = str;
-  return div.innerHTML;
-}
-
-// Charts
-async function loadCharts() {
-  // Trend
-  const trendResp = await apiFetch('/api/stats/trend');
-  const trendData = (await trendResp.json()).data;
-
-  const months = trendData.map(d => d.month);
-  const totals = trendData.map(d => d.total);
-
-  if (trendChart) trendChart.destroy();
-  const tCtx = document.getElementById('trendChart').getContext('2d');
-  trendChart = new Chart(tCtx, {
-    type: 'line',
-    data: {
-      labels: months.length ? months : ['暂无'],
-      datasets: [{
-        label: '月支出',
-        data: totals.length ? totals : [0],
-        borderColor: '#3B82F6',
-        backgroundColor: 'rgba(59,130,246,0.1)',
-        fill: true,
-        tension: 0.4,
-        pointRadius: 4
-      }]
-    },
-    options: {
-      responsive: true,
-      plugins: { legend: { display: false } },
-      scales: { y: { beginAtZero: true } }
-    }
-  });
-
-  // Category
-  const catResp = await apiFetch('/api/stats/category');
-  const catData = (await catResp.json()).data;
-
-  if (categoryChart) categoryChart.destroy();
-  const cCtx = document.getElementById('categoryChart').getContext('2d');
-  categoryChart = new Chart(cCtx, {
-    type: 'doughnut',
-    data: {
-      labels: catData.length ? catData.map(d => d.category) : ['暂无'],
-      datasets: [{
-        data: catData.length ? catData.map(d => d.total) : [1],
-        backgroundColor: catData.length ? catData.map(d => d.color) : ['#eee']
-      }]
-    },
-    options: {
-      responsive: true,
-      plugins: {
-        legend: { position: 'bottom', labels: { boxWidth: 10, font: { size: 11 } } }
-      }
-    }
-  });
-
-  // Monthly total
-  if (catData.length) {
-    const total = catData.reduce((s, d) => s + d.total, 0).toFixed(0);
-    document.getElementById('monthlyTotal').textContent = `本月支出 ¥${total}`;
+    document.getElementById('loginMsg').classList.remove('hidden'); document.getElementById('loginMsg').textContent = t('loginFail');
   }
 }
+async function doLogout() { STORE.loggedIn = false; localStorage.setItem('acc_logged','0'); location.reload(); }
+async function setPassword(newPwd) { STORE.pwdHash = await hashPwd(newPwd); localStorage.setItem('acc_pwd', STORE.pwdHash); STORE.loggedIn = true; localStorage.setItem('acc_logged','1'); }
 
-function loadAll() {
-  loadTransactions();
-  loadCharts();
-}
-
-// API key management
-function showApiKeyModal() {
-  document.getElementById('apiKeyInput').value = getApiKey();
-  document.getElementById('apiKeyModal').classList.remove('hidden');
-}
-function hideApiKeyModal() {
-  document.getElementById('apiKeyModal').classList.add('hidden');
-}
-function saveApiKey() {
-  const key = document.getElementById('apiKeyInput').value.trim();
-  localStorage.setItem('accounting_api_key', key);
-  hideApiKeyModal();
-  loadAll();
+// ==================== API ====================
+function apiHeaders() { return { 'X-API-Key': STORE.apiKey || 'jizhang2026', 'Content-Type': 'application/json' }; }
+async function api(url, opts={}) {
+  opts.headers = { ...apiHeaders(), ...(opts.headers||{}) };
+  const r = await fetch(url, opts);
+  if (r.status === 403) { alert('API Key 无效'); STORE.apiKey = ''; localStorage.removeItem('accounting_api_key'); location.reload(); }
+  return r;
 }
 
-async function exportCSV() {
-  const resp = await apiFetch('/api/stats/export/csv');
-  const blob = await resp.blob();
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = 'accounting_export.csv';
-  a.click();
-  URL.revokeObjectURL(url);
+// ==================== Tab 路由 ====================
+function switchTab(tab) {
+  STORE.currentTab = tab; STORE.currentPage = 1;
+  document.querySelectorAll('.tab-item').forEach(el => el.classList.toggle('active', el.dataset.tab === tab));
+  loadCurrentTab();
+}
+function loadCurrentTab() {
+  const t = STORE.currentTab;
+  if (t === 'feed') loadFeed();
+  else if (t === 'details') loadDetails();
+  else if (t === 'stats') loadStats();
+  else if (t === 'settings') loadSettings();
 }
 
-// Init
-if (!getApiKey()) {
-  showApiKeyModal();
-} else {
-  loadAll();
+// ==================== 流水 ====================
+async function loadFeed() {
+  const ym = getYearMonth();
+  const params = new URLSearchParams({ page: STORE.currentPage, page_size: 20, sort: STORE.currentSort });
+  if (ym.month) { params.set('date_from', ym.start); params.set('date_to', ym.end); }
+  const r = await api('/api/transactions?' + params);
+  const d = (await r.json()).data;
+  updateMonthlyTotal();
+
+  const sortLabels = { date_desc: '↓时间', date_asc: '↑时间', amount_desc: '↓金额', amount_asc: '↑金额' };
+
+  let html = `
+    <div class="flex gap-2 mb-3 flex-wrap">
+      ${Object.entries(sortLabels).map(([k,v]) => `<button class="btn btn-ghost text-xs ${STORE.currentSort===k?'font-bold text-[var(--accent)]':''}" onclick="STORE.currentSort='${k}';loadFeed()">${v}</button>`).join('')}
+      <select id="feedCatFilter" class="input text-xs w-24" onchange="loadFeed()"><option value="">全部分类</option></select>
+    </div>`;
+
+  if (!d.items.length) html += `<div class="card text-center text-[var(--text2)] py-10">${t('noData')}</div>`;
+  else d.items.forEach(tx => {
+    const catColor = tx.color || '#ccc';
+    html += `<div class="card flex items-center gap-3 hover:bg-[var(--hover)] transition">
+      <div class="w-10 h-10 rounded-full flex items-center justify-center text-lg" style="background:${catColor}20">${tx.icon||'📌'}</div>
+      <div class="flex-1 min-w-0">
+        <div class="font-medium truncate">${escHtml(tx.item_name)}</div>
+        <div class="text-xs text-[var(--text2)]">${tx.trans_date} · ${tx.category||'其他'}</div>
+      </div>
+      <div class="text-right">
+        <div class="font-mono font-bold">${tx.currency} ${Number(tx.amount).toFixed(2)}</div>
+        <div class="flex gap-1 justify-end mt-1">
+          <button class="btn btn-ghost text-xs py-1 px-2" onclick="openEdit(${tx.id},'${escAttr(tx.item_name)}',${tx.amount},'${tx.category}','${tx.trans_date}')">✏️</button>
+          <button class="btn btn-danger text-xs py-1 px-2" onclick="delTx(${tx.id})">🗑️</button>
+        </div>
+      </div>
+    </div>`;
+  });
+
+  html += pageNav(d);
+  document.getElementById('tabContent').innerHTML = html;
+  populateCatFilter('feedCatFilter');
 }
+
+// ==================== 明细 ====================
+async function loadDetails() {
+  const ym = getYearMonth();
+  const searchEl = document.getElementById('detailSearch');
+  const search = searchEl ? searchEl.value : '';
+  const params = new URLSearchParams({ page: STORE.currentPage, page_size: 20 });
+  if (ym.month) { params.set('date_from', ym.start); params.set('date_to', ym.end); }
+  if (search) params.set('search', search);
+  const r = await api('/api/transactions?' + params);
+  const d = (await r.json()).data;
+
+  let html = `
+    <div class="flex gap-2 mb-3">
+      <input id="detailSearch" class="input flex-1" placeholder="${t('search')}" value="${search}" onkeydown="if(event.key==='Enter')loadDetails()">
+      <button class="btn btn-accent text-sm" onclick="loadDetails()">🔍</button>
+      <button class="btn btn-ghost text-sm" onclick="exportCSV()">📥 ${t('exportCSV')}</button>
+    </div>
+    <div class="card overflow-x-auto p-2"><table class="w-full text-sm"><thead><tr class="text-[var(--text2)] text-left border-b border-[var(--border)]">
+      <th class="pb-2 pr-2 whitespace-nowrap">${t('fieldDate')}</th><th class="pb-2 pr-2">${t('fieldCategory')}</th><th class="pb-2 pr-2">${t('fieldName')}</th><th class="pb-2 pr-2 text-right">${t('fieldAmount')}</th><th class="pb-2 pr-2 text-right w-16">操作</th>
+    </tr></thead><tbody>`;
+
+  if (!d.items.length) html += `<tr><td colspan="5" class="py-8 text-center text-[var(--text2)]">${t('noData')}</td></tr>`;
+  else d.items.forEach(tx => {
+    html += `<tr class="border-b border-[var(--border)] hover:bg-[var(--hover)]">
+      <td class="py-2 pr-2 text-xs text-[var(--text2)] whitespace-nowrap">${tx.trans_date}</td>
+      <td class="py-2 pr-2 text-xs">${tx.category||'-'}</td>
+      <td class="py-2 pr-2 font-medium text-sm">${escHtml(tx.item_name)}</td>
+      <td class="py-2 pr-2 text-right font-mono text-sm">${tx.currency} ${Number(tx.amount).toFixed(2)}</td>
+      <td class="py-2 pr-2 text-right">
+        <button class="btn btn-ghost text-xs py-1 px-1" onclick="openEdit(${tx.id},'${escAttr(tx.item_name)}',${tx.amount},'${tx.category}','${tx.trans_date}')">✏️</button>
+        <button class="btn btn-danger text-xs py-1 px-1" onclick="delTx(${tx.id})">🗑️</button>
+      </td></tr>`;
+  });
+
+  html += `</tbody></table></div>` + pageNav(d);
+  document.getElementById('tabContent').innerHTML = html;
+}
+
+// ==================== 统计 ====================
+let trendChart, catChart;
+async function loadStats() {
+  const period = STORE.statsPeriod;
+  const periods = { week: t('week'), month: t('month'), year: t('year') };
+  const periodBtns = Object.entries(periods).map(([k,v])=>`<button class="btn btn-ghost text-xs ${period===k?'font-bold text-[var(--accent)]':''}" onclick="STORE.statsPeriod='${k}';loadStats()">${v}</button>`).join('');
+
+  const [dailyR, rankR, catR, trendR] = await Promise.all([
+    api('/api/stats/daily?month=' + new Date().toISOString().slice(0,7)),
+    api('/api/stats/ranking?period=' + period),
+    api('/api/stats/category'),
+    period==='year' ? api('/api/stats/monthly') : api('/api/stats/daily?month=' + new Date().toISOString().slice(0,7)),
+  ]);
+  const dailyData = (await dailyR.json()).data;
+  const rankData = (await rankR.json()).data;
+  const catData = (await catR.json()).data;
+  const trendData = (await trendR.json()).data;
+
+  const totalAll = catData.reduce((s,d)=>s+d.total, 0);
+  const dayCount = dailyData.length || 1;
+  const txCount = dailyData.reduce((s,d)=>s+(d.count||0), 0);
+
+  let html = `
+    <div class="flex gap-2 mb-3">${periodBtns}</div>
+    <div class="grid grid-cols-3 gap-3 mb-4">
+      <div class="card text-center"><div class="text-xs text-[var(--text2)]">${t('totalSpend')}</div><div class="text-lg font-bold">¥${totalAll.toFixed(0)}</div></div>
+      <div class="card text-center"><div class="text-xs text-[var(--text2)]">${t('avgDaily')}</div><div class="text-lg font-bold">¥${(totalAll/dayCount).toFixed(0)}</div></div>
+      <div class="card text-center"><div class="text-xs text-[var(--text2)]">${t('txCount')}</div><div class="text-lg font-bold">${txCount}</div></div>
+    </div>
+    <div class="card mb-4"><h4 class="text-xs text-[var(--text2)] mb-2">${period==='year'?'月度趋势':'每日趋势'}</h4><canvas id="trendChart" height="180"></canvas></div>
+    <div class="card mb-4"><h4 class="text-xs text-[var(--text2)] mb-2">每日热力图</h4><div id="heatmap" class="grid grid-cols-7 gap-1"></div></div>
+    <div class="grid grid-cols-2 gap-4">
+      <div class="card"><h4 class="text-xs text-[var(--text2)] mb-2">${t('rankCat')}</h4><div id="rankCat"></div></div>
+      <div class="card"><h4 class="text-xs text-[var(--text2)] mb-2">${t('rankItem')}</h4><div id="rankItem"></div></div>
+    </div>`;
+
+  document.getElementById('tabContent').innerHTML = html;
+
+  // 趋势图
+  setTimeout(()=>{
+    const ctx = document.getElementById('trendChart'); if (!ctx) return;
+    if (trendChart) trendChart.destroy();
+    const labels = trendData.map(d=>d.day||d.month); const totals = trendData.map(d=>d.total);
+    trendChart = new Chart(ctx, { type:'line', data:{labels,datasets:[{label:'支出',data:totals,borderColor:'#3b82f6',backgroundColor:'rgba(59,130,246,.1)',fill:true,tension:.4,pointRadius:3}]}, options:{responsive:true,plugins:{legend:{display:false}},scales:{y:{beginAtZero:true}}} });
+  }, 100);
+
+  // 热力图
+  setTimeout(()=>{
+    const hm = document.getElementById('heatmap'); if (!hm) return;
+    const ym = new Date().toISOString().slice(0,7);
+    const daysInMonth = new Date(new Date().getFullYear(), new Date().getMonth()+1, 0).getDate();
+    const dayMap = {}; dailyData.forEach(d=>{ dayMap[d.day] = d.total; });
+    const maxVal = Math.max(...Object.values(dayMap), 1);
+    let hmHtml = '<div class="col-span-7 text-xs text-[var(--text2)] mb-1">'+['日','一','二','三','四','五','六'].map(w=>`<span class="inline-block w-8 text-center">${w}</span>`).join('')+'</div>';
+    const firstDow = new Date(ym+'-01').getDay();
+    for (let i=0; i<firstDow; i++) hmHtml += '<div></div>';
+    for (let d=1; d<=daysInMonth; d++) {
+      const dayStr = ym+'-'+String(d).padStart(2,'0');
+      const val = dayMap[dayStr]||0;
+      const intensity = val/maxVal;
+      const bg = val ? `rgba(59,130,246,${.1+intensity*.9})` : 'var(--hover)';
+      hmHtml += `<div class="heat-cell text-center text-xs py-1" style="background:${bg}" title="${dayStr}: ¥${val.toFixed(0)}">${d}</div>`;
+    }
+    hm.innerHTML = hmHtml;
+  }, 150);
+
+  // 排行
+  setTimeout(()=>{
+    const rc = document.getElementById('rankCat'); if (rc) rc.innerHTML = rankData.by_category.map((r,i)=>`<div class="flex justify-between text-xs py-1"><span>${i+1}. ${r.category}</span><span class="font-mono">¥${r.total.toFixed(0)}</span></div>`).join('')||t('noData');
+    const ri = document.getElementById('rankItem'); if (ri) ri.innerHTML = rankData.by_item.map((r,i)=>`<div class="flex justify-between text-xs py-1"><span>${i+1}. ${escHtml(r.item_name)}</span><span class="font-mono">¥${r.total.toFixed(0)}</span></div>`).join('')||t('noData');
+  }, 200);
+}
+
+// ==================== 设置 ====================
+function loadSettings() {
+  document.getElementById('tabContent').innerHTML = `
+    <div class="card mb-3"><h4 class="font-medium mb-2">🎨 ${t('settingsTheme')}</h4>
+      <div class="flex gap-3">${['light','dark','system'].map(th => `<label class="flex items-center gap-1 text-sm cursor-pointer"><input type="radio" name="theme" value="${th}" ${STORE.theme===th?'checked':''} onchange="setTheme('${th}')"> ${t('theme'+th.charAt(0).toUpperCase()+th.slice(1))}</label>`).join('')}</div></div>
+    <div class="card mb-3"><h4 class="font-medium mb-2">🌐 ${t('settingsLang')}</h4>
+      <div class="flex gap-3">${['zh_CN','zh_TW','en'].map(l => `<label class="flex items-center gap-1 text-sm cursor-pointer"><input type="radio" name="lang" value="${l}" ${STORE.lang===l?'checked':''} onchange="setLang('${l}')"> ${t('lang'+({zh_CN:'CN',zh_TW:'TW',en:'EN'}[l]))}</label>`).join('')}</div></div>
+    <div class="card mb-3"><h4 class="font-medium mb-2">📂 ${t('settingsCats')}</h4>
+      <button class="btn btn-accent text-sm" onclick="openCatManager()">${t('settingsCats')}</button></div>
+    <div class="card mb-3"><h4 class="font-medium mb-2">🔐 ${t('settingsAccount')}</h4>
+      <div class="flex gap-2"><button class="btn btn-accent text-sm" onclick="changePassword()">${t('changePwd')}</button><button class="btn btn-danger text-sm" onclick="doLogout()">${t('logout')}</button></div></div>
+    <div class="card"><h4 class="font-medium mb-2">ℹ️ ${t('settingsAbout')}</h4><p class="text-xs text-[var(--text2)]">AI 记账助手 v3.0 · <a href="https://github.com/Koomooneleven/ai-bookkeeping" class="text-[var(--accent)]" target="_blank">GitHub</a></p></div>`;
+}
+function setTheme(v) { STORE.theme = v; localStorage.setItem('acc_theme', v); applyTheme(); loadSettings(); }
+function setLang(v) { STORE.lang = v; localStorage.setItem('acc_lang', v); applyI18n(); loadCurrentTab(); document.querySelectorAll('.tab-item').forEach(el=>{ const k='tab'+el.dataset.tab.charAt(0).toUpperCase()+el.dataset.tab.slice(1); el.querySelector('span:last-child').textContent=t(k); }); }
+async function changePassword() { const p=prompt('新密码:'); if(p){ await setPassword(p); alert('密码已更新'); } }
+
+// ==================== 编辑功能 ====================
+async function openEdit(id, name, amount, cat, date) {
+  document.getElementById('editId').value = id;
+  document.getElementById('editName').value = name;
+  document.getElementById('editAmount').value = amount;
+  document.getElementById('editDate').value = date.replace(' ','T');
+  const cats = await (await api('/api/categories')).json();
+  document.getElementById('editCategory').innerHTML = cats.data.map(c=>`<option value="${c.name}" ${c.name===cat?'selected':''}>${c.icon} ${c.name}</option>`).join('');
+  document.getElementById('editModal').classList.remove('hidden');
+}
+function closeEdit() { document.getElementById('editModal').classList.add('hidden'); }
+async function saveEdit() {
+  const id = document.getElementById('editId').value;
+  const body = { item_name: document.getElementById('editName').value, amount: parseFloat(document.getElementById('editAmount').value), category: document.getElementById('editCategory').value, trans_date: document.getElementById('editDate').value.replace('T',' ') };
+  await api('/api/transactions/'+id, { method:'PUT', body:JSON.stringify(body) });
+  closeEdit();
+  loadCurrentTab();
+}
+async function delTx(id) { if (!confirm('删除?')) return; await api('/api/transactions/'+id, {method:'DELETE'}); loadCurrentTab(); }
+
+// ==================== 分类管理 ====================
+async function openCatManager() {
+  document.getElementById('catModal').classList.remove('hidden');
+  await renderCatList();
+}
+async function renderCatList() {
+  const r = await api('/api/categories');
+  const cats = (await r.json()).data;
+  document.getElementById('catList').innerHTML = cats.map(c=>`
+    <div class="flex items-center gap-2 text-sm py-1 border-b border-[var(--border)]">
+      <span>${c.icon}</span> <span class="flex-1">${c.name}</span>
+      <input type="color" value="${c.color}" class="w-6 h-6 rounded cursor-pointer" onchange="updateCat(${c.id},null,null,this.value)">
+      <button class="btn btn-danger text-xs py-0 px-1" onclick="delCat(${c.id})">×</button>
+    </div>`).join('');
+}
+async function addCategory() {
+  const name = document.getElementById('newCatName').value.trim();
+  if (!name) return;
+  const icon = document.getElementById('newCatIcon').value;
+  const color = document.getElementById('newCatColor').value;
+  await api('/api/categories', { method:'POST', body:JSON.stringify({ name, icon, color }) });
+  document.getElementById('newCatName').value = '';
+  renderCatList();
+}
+async function updateCat(id, name, icon, color) { await api('/api/categories/'+id, {method:'PUT', body:JSON.stringify({name,icon,color})}); }
+async function delCat(id) { await api('/api/categories/'+id, {method:'DELETE'}); renderCatList(); }
+
+// ==================== 工具函数 ====================
+function getYearMonth() {
+  const y = document.getElementById('selYear').value;
+  const m = document.getElementById('selMonth').value;
+  if (m === 'all') return { month: null, start: '', end: '' };
+  const start = `${y}-${m.padStart(2,'0')}-01`;
+  const lastDay = new Date(+y, +m, 0).getDate();
+  const end = `${y}-${m.padStart(2,'0')}-${String(lastDay).padStart(2,'0')}`;
+  return { month: `${y}-${m.padStart(2,'0')}`, start, end };
+}
+async function updateMonthlyTotal() {
+  const r = await api('/api/stats/category'); const d=(await r.json()).data;
+  document.getElementById('monthlyTotal').textContent = '¥ '+d.reduce((s,x)=>s+x.total,0).toFixed(0);
+}
+function pageNav(d) {
+  return `<div class="flex justify-between items-center mt-3 text-sm"><span class="text-[var(--text2)]">共 ${d.total} 条 · 第 ${d.page||1} 页</span>
+    <div class="flex gap-1"><button class="btn btn-ghost text-xs" ${(d.page||1)<=1?'disabled':''} onclick="STORE.currentPage--;loadCurrentTab()">‹</button>
+    <button class="btn btn-ghost text-xs" ${(d.page||1)*20>=d.total?'disabled':''} onclick="STORE.currentPage++;loadCurrentTab()">›</button></div></div>`;
+}
+async function populateCatFilter(elId) {
+  const el = document.getElementById(elId); if (!el) return;
+  const r = await api('/api/categories'); const cats = (await r.json()).data;
+  el.innerHTML = '<option value="">全部</option>' + cats.map(c=>`<option value="${c.name}">${c.icon} ${c.name}</option>`).join('');
+}
+function escHtml(s) { const d=document.createElement('div'); d.textContent=s; return d.innerHTML; }
+function escAttr(s) { return (s||'').replace(/'/g,"\\'").replace(/"/g,'&quot;'); }
+async function exportCSV() { const r=await api('/api/stats/export/csv'); const b=await r.blob(); const a=document.createElement('a'); a.href=URL.createObjectURL(b); a.download='bills.csv'; a.click(); }
+
+// ==================== 初始化 ====================
+async function init() {
+  // 年份下拉
+  const selY = document.getElementById('selYear');
+  const thisY = new Date().getFullYear();
+  selY.innerHTML = Array.from({length:5},(_,i)=>thisY-2+i).map(y=>`<option value="${y}" ${y===thisY?'selected':''}>${y}年</option>`).join('');
+  // 月份下拉
+  const selM = document.getElementById('selMonth');
+  for (let m=1; m<=12; m++) { const o=document.createElement('option'); o.value=String(m); o.textContent=m+'月'; if (m===new Date().getMonth()+1) o.selected=true; selM.appendChild(o); }
+  applyI18n();
+  document.querySelectorAll('.tab-item').forEach(el => el.addEventListener('click', ()=>switchTab(el.dataset.tab)));
+  loadFeed();
+}
+
+if (!checkAuth()) { /* show login */ } else { init(); }
+
+// 主题跟随系统
+window.matchMedia('(prefers-color-scheme:dark)').addEventListener('change', ()=>{ if (STORE.theme==='system') applyTheme(); });
+applyTheme();
 </script>
 </body>
 </html>

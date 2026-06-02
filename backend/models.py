@@ -54,3 +54,22 @@ class StatsCategory(BaseModel):
     percentage: float
     color: Optional[str] = None
     icon: Optional[str] = None
+
+
+class CategoryCreate(BaseModel):
+    name: str
+    icon: str = "📌"
+    color: str = "#CCCCCC"
+
+
+class CategoryUpdate(BaseModel):
+    name: Optional[str] = None
+    icon: Optional[str] = None
+    color: Optional[str] = None
+
+
+class CategoryOut(BaseModel):
+    id: int
+    name: str
+    icon: Optional[str]
+    color: Optional[str]
