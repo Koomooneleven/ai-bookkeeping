@@ -9,9 +9,11 @@ router = APIRouter(prefix="/categories", tags=["categories"])
 @router.get("")
 async def list_categories(
     db=Depends(get_db),
-    _=Depends(verify_api_key),
+    auth=Depends(verify_api_key),
 ):
-    rows = await db.execute_fetchall("SELECT * FROM categories ORDER BY id")
+    rows = await db.execute_fetchall(
+        "SELECT * FROM categories WHERE user_id = ? ORDER BY id", [auth["user_id"]]
+    )
     return {"success": True, "data": [dict(r) for r in rows]}
 
 
@@ -19,12 +21,12 @@ async def list_categories(
 async def create_category(
     body: CategoryCreate,
     db=Depends(get_db),
-    _=Depends(verify_api_key),
+    auth=Depends(verify_api_key),
 ):
     try:
         cursor = await db.execute(
-            "INSERT INTO categories (name, icon, color) VALUES (?, ?, ?)",
-            (body.name, body.icon, body.color),
+            "INSERT INTO categories (name, icon, color, user_id) VALUES (?, ?, ?, ?)",
+            (body.name, body.icon, body.color, auth["user_id"]),
         )
         await db.commit()
         return APIResponse(success=True, data={"id": cursor.lastrowid, "name": body.name})
@@ -37,14 +39,14 @@ async def update_category(
     cat_id: int,
     body: CategoryUpdate,
     db=Depends(get_db),
-    _=Depends(verify_api_key),
+    auth=Depends(verify_api_key),
 ):
     updates = {k: v for k, v in body.model_dump().items() if v is not None}
     if not updates:
         return APIResponse(success=False, error="没有需要更新的字段")
     set_clause = ", ".join(f"{k} = ?" for k in updates)
-    values = list(updates.values()) + [cat_id]
-    await db.execute(f"UPDATE categories SET {set_clause} WHERE id = ?", values)
+    values = list(updates.values()) + [cat_id, auth["user_id"]]
+    await db.execute(f"UPDATE categories SET {set_clause} WHERE id = ? AND user_id = ?", values)
     await db.commit()
     return APIResponse(success=True, data={"id": cat_id, "updated": True})
 
@@ -53,12 +55,14 @@ async def update_category(
 async def delete_category(
     cat_id: int,
     db=Depends(get_db),
-    _=Depends(verify_api_key),
+    auth=Depends(verify_api_key),
 ):
-    row = await db.execute_fetchall("SELECT name FROM categories WHERE id = ?", [cat_id])
+    row = await db.execute_fetchall(
+        "SELECT name FROM categories WHERE id = ? AND user_id = ?", [cat_id, auth["user_id"]]
+    )
     if not row:
         return APIResponse(success=False, error="分类不存在")
     name = row[0]["name"]
-    await db.execute("DELETE FROM categories WHERE id = ?", [cat_id])
+    await db.execute("DELETE FROM categories WHERE id = ? AND user_id = ?", [cat_id, auth["user_id"]])
     await db.commit()
     return APIResponse(success=True, data={"id": cat_id, "name": name, "deleted": True})

@@ -48,9 +48,10 @@ select.input { appearance: none; cursor: pointer; }
   <div class="card w-full max-w-sm text-center">
     <div class="text-4xl mb-4">🤖</div>
     <h2 class="text-xl font-bold mb-1" data-i18n="loginTitle">AI 记账助手</h2>
-    <p class="text-sm text-[var(--text2)] mb-4" data-i18n="loginSub">输入密码解锁仪表盘</p>
+    <p class="text-sm text-[var(--text2)] mb-4">登录以查看你的账单</p>
+    <input id="loginUser" class="input mb-2" placeholder="用户名">
     <input id="loginPwd" type="password" class="input mb-3" placeholder="密码">
-    <button class="btn btn-accent w-full" onclick="doLogin()" data-i18n="loginBtn">解锁</button>
+    <button class="btn btn-accent w-full" onclick="doLogin()">登录</button>
     <p id="loginMsg" class="text-xs text-red-500 mt-2 hidden"></p>
   </div>
 </div>
@@ -59,14 +60,10 @@ select.input { appearance: none; cursor: pointer; }
 <div id="appScreen" class="max-w-2xl mx-auto px-4 pt-4">
 
   <!-- 顶部栏 -->
-  <div class="flex items-center justify-between mb-4">
+  <div id="topFilters" class="flex items-center justify-between mb-4">
     <div class="flex items-center gap-2">
       <select id="selYear" class="input text-sm w-20" onchange="loadCurrentTab()"></select>
       <select id="selMonth" class="input text-sm w-16" onchange="loadCurrentTab()"><option value="all" data-i18n="allMonths">全部</option></select>
-    </div>
-    <div class="text-right">
-      <div class="text-xs text-[var(--text2)]" data-i18n="monthlyTotal">本月支出</div>
-      <div id="monthlyTotal" class="text-lg font-bold">¥ --</div>
     </div>
   </div>
 
@@ -130,13 +127,13 @@ select.input { appearance: none; cursor: pointer; }
 const STORE = {
   theme: localStorage.getItem('acc_theme') || 'light',
   lang: localStorage.getItem('acc_lang') || 'zh_CN',
-  pwdHash: localStorage.getItem('acc_pwd') || '',
-  loggedIn: localStorage.getItem('acc_logged') === '1',
-  apiKey: localStorage.getItem('accounting_api_key') || '',
+  user: JSON.parse(localStorage.getItem('acc_user') || 'null'),
   currentTab: 'feed',
   currentPage: 1,
   currentSort: 'date_desc',
-  statsPeriod: 'month',
+  statsView: 'monthly',
+  statsYear: new Date().getFullYear(),
+  statsMonth: new Date().getMonth() + 1,
 };
 
 // ==================== i18n ====================
@@ -199,31 +196,52 @@ function applyTheme() {
 }
 
 // ==================== 认证 ====================
-async function hashPwd(p) { const e = new TextEncoder(); const d = await crypto.subtle.digest('SHA-256', e.encode(p)); return [...new Uint8Array(d)].map(b=>b.toString(16).padStart(2,'0')).join(''); }
 function checkAuth() {
-  if (!STORE.pwdHash) { document.getElementById('loginScreen').classList.add('hidden'); document.getElementById('appScreen').classList.remove('hidden'); return true; }
-  if (STORE.loggedIn) { document.getElementById('loginScreen').classList.add('hidden'); document.getElementById('appScreen').classList.remove('hidden'); return true; }
-  document.getElementById('loginScreen').classList.remove('hidden'); document.getElementById('appScreen').classList.add('hidden'); return false;
+  if (STORE.user && STORE.user.api_key) {
+    document.getElementById('loginScreen').classList.add('hidden');
+    document.getElementById('appScreen').classList.remove('hidden');
+    return true;
+  }
+  document.getElementById('loginScreen').classList.remove('hidden');
+  document.getElementById('appScreen').classList.add('hidden');
+  return false;
 }
 async function doLogin() {
-  const pwd = document.getElementById('loginPwd').value;
-  const hash = await hashPwd(pwd);
-  if (hash === STORE.pwdHash) {
-    STORE.loggedIn = true; localStorage.setItem('acc_logged','1');
-    document.getElementById('loginScreen').classList.add('hidden'); document.getElementById('appScreen').classList.remove('hidden'); init();
+  const username = document.getElementById('loginUser').value.trim();
+  const password = document.getElementById('loginPwd').value;
+  if (!username || !password) {
+    document.getElementById('loginMsg').classList.remove('hidden');
+    document.getElementById('loginMsg').textContent = '请输入用户名和密码';
+    return;
+  }
+  const r = await fetch('/api/auth/login', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ username, password }),
+  });
+  const d = await r.json();
+  if (d.success) {
+    STORE.user = d.data;
+    localStorage.setItem('acc_user', JSON.stringify(d.data));
+    document.getElementById('loginScreen').classList.add('hidden');
+    document.getElementById('appScreen').classList.remove('hidden');
+    init();
   } else {
-    document.getElementById('loginMsg').classList.remove('hidden'); document.getElementById('loginMsg').textContent = t('loginFail');
+    document.getElementById('loginMsg').classList.remove('hidden');
+    document.getElementById('loginMsg').textContent = d.error || '登录失败';
   }
 }
-async function doLogout() { STORE.loggedIn = false; localStorage.setItem('acc_logged','0'); location.reload(); }
-async function setPassword(newPwd) { STORE.pwdHash = await hashPwd(newPwd); localStorage.setItem('acc_pwd', STORE.pwdHash); STORE.loggedIn = true; localStorage.setItem('acc_logged','1'); }
+function doLogout() { STORE.user = null; localStorage.removeItem('acc_user'); location.reload(); }
 
 // ==================== API ====================
-function apiHeaders() { return { 'X-API-Key': STORE.apiKey || 'jizhang2026', 'Content-Type': 'application/json' }; }
+function apiHeaders() {
+  const key = (STORE.user && STORE.user.api_key) || '';
+  return { 'X-API-Key': key, 'Content-Type': 'application/json' };
+}
 async function api(url, opts={}) {
   opts.headers = { ...apiHeaders(), ...(opts.headers||{}) };
   const r = await fetch(url, opts);
-  if (r.status === 403) { alert('API Key 无效'); STORE.apiKey = ''; localStorage.removeItem('accounting_api_key'); location.reload(); }
+  if (r.status === 403) { alert('登录已失效，请重新登录'); doLogout(); }
   return r;
 }
 
@@ -231,6 +249,8 @@ async function api(url, opts={}) {
 function switchTab(tab) {
   STORE.currentTab = tab; STORE.currentPage = 1;
   document.querySelectorAll('.tab-item').forEach(el => el.classList.toggle('active', el.dataset.tab === tab));
+  const showFilters = tab === 'feed' || tab === 'details';
+  document.getElementById('topFilters').style.display = showFilters ? '' : 'none';
   loadCurrentTab();
 }
 function loadCurrentTab() {
@@ -246,16 +266,24 @@ async function loadFeed() {
   const ym = getYearMonth();
   const params = new URLSearchParams({ page: STORE.currentPage, page_size: 20, sort: STORE.currentSort });
   if (ym.month) { params.set('date_from', ym.start); params.set('date_to', ym.end); }
+  const catFilter = document.getElementById('feedCatFilter')?.value;
+  if (catFilter) params.set('category', catFilter);
   const r = await api('/api/transactions?' + params);
   const d = (await r.json()).data;
-  updateMonthlyTotal();
 
-  const sortLabels = { date_desc: '↓时间', date_asc: '↑时间', amount_desc: '↓金额', amount_asc: '↑金额' };
+  const sortArrow = (field) => {
+    if (field==='date') return STORE.currentSort==='date_asc'?'▲':STORE.currentSort==='date_desc'?'▼':'';
+    return STORE.currentSort==='amount_asc'?'▲':STORE.currentSort==='amount_desc'?'▼':'';
+  };
+  const sortActive = (field) => STORE.currentSort?.startsWith(field);
 
   let html = `
-    <div class="flex gap-2 mb-3 flex-wrap">
-      ${Object.entries(sortLabels).map(([k,v]) => `<button class="btn btn-ghost text-xs ${STORE.currentSort===k?'font-bold text-[var(--accent)]':''}" onclick="STORE.currentSort='${k}';loadFeed()">${v}</button>`).join('')}
+    <div class="flex gap-2 mb-3 flex-wrap items-center">
+      <button class="btn btn-ghost text-xs ${sortActive('date')?'font-bold text-[var(--accent)]':''}" onclick="toggleSort('date')">时间 ${sortArrow('date')}</button>
+      <button class="btn btn-ghost text-xs ${sortActive('amount')?'font-bold text-[var(--accent)]':''}" onclick="toggleSort('amount')">金额 ${sortArrow('amount')}</button>
       <select id="feedCatFilter" class="input text-xs w-24" onchange="loadFeed()"><option value="">全部分类</option></select>
+      <div class="flex-1"></div>
+      <div class="text-sm"><span class="text-[var(--text2)]">总计</span> <span id="feedTotal" class="font-bold">¥ --</span></div>
     </div>`;
 
   if (!d.items.length) html += `<div class="card text-center text-[var(--text2)] py-10">${t('noData')}</div>`;
@@ -279,7 +307,8 @@ async function loadFeed() {
 
   html += pageNav(d);
   document.getElementById('tabContent').innerHTML = html;
-  populateCatFilter('feedCatFilter');
+  populateCatFilter('feedCatFilter', catFilter);
+  updateFeedTotal(ym, catFilter);
 }
 
 // ==================== 明细 ====================
@@ -297,6 +326,7 @@ async function loadDetails() {
     <div class="flex gap-2 mb-3">
       <input id="detailSearch" class="input flex-1" placeholder="${t('search')}" value="${search}" onkeydown="if(event.key==='Enter')loadDetails()">
       <button class="btn btn-accent text-sm" onclick="loadDetails()">🔍</button>
+      <button class="btn btn-accent text-sm" onclick="openCreate()">➕ 添加</button>
       <button class="btn btn-ghost text-sm" onclick="exportCSV()">📥 ${t('exportCSV')}</button>
     </div>
     <div class="card overflow-x-auto p-2"><table class="w-full text-sm"><thead><tr class="text-[var(--text2)] text-left border-b border-[var(--border)]">
@@ -321,110 +351,297 @@ async function loadDetails() {
 }
 
 // ==================== 统计 ====================
-let trendChart, catChart;
+let statsBarChart = null;
+function statsMonthStr() { return STORE.statsYear+'-'+String(STORE.statsMonth).padStart(2,'0'); }
 async function loadStats() {
-  const period = STORE.statsPeriod;
-  const periods = { week: t('week'), month: t('month'), year: t('year') };
-  const periodBtns = Object.entries(periods).map(([k,v])=>`<button class="btn btn-ghost text-xs ${period===k?'font-bold text-[var(--accent)]':''}" onclick="STORE.statsPeriod='${k}';loadStats()">${v}</button>`).join('');
-
-  const [dailyR, rankR, catR, trendR] = await Promise.all([
-    api('/api/stats/daily?month=' + new Date().toISOString().slice(0,7)),
-    api('/api/stats/ranking?period=' + period),
-    api('/api/stats/category'),
-    period==='year' ? api('/api/stats/monthly') : api('/api/stats/daily?month=' + new Date().toISOString().slice(0,7)),
-  ]);
-  const dailyData = (await dailyR.json()).data;
-  const rankData = (await rankR.json()).data;
-  const catData = (await catR.json()).data;
-  const trendData = (await trendR.json()).data;
-
-  const totalAll = catData.reduce((s,d)=>s+d.total, 0);
-  const dayCount = dailyData.length || 1;
-  const txCount = dailyData.reduce((s,d)=>s+(d.count||0), 0);
+  const isMonthly = STORE.statsView === 'monthly';
+  const thisY = new Date().getFullYear();
+  const years = Array.from({length:5},(_,i)=>thisY-2+i);
+  const yOpts = years.map(y=>`<option value="${y}" ${y===STORE.statsYear?'selected':''}>${y}年</option>`).join('');
+  const mOpts = Array.from({length:12},(_,i)=>`<option value="${i+1}" ${(i+1)===STORE.statsMonth?'selected':''}>${i+1}月</option>`).join('');
 
   let html = `
-    <div class="flex gap-2 mb-3">${periodBtns}</div>
-    <div class="grid grid-cols-3 gap-3 mb-4">
-      <div class="card text-center"><div class="text-xs text-[var(--text2)]">${t('totalSpend')}</div><div class="text-lg font-bold">¥${totalAll.toFixed(0)}</div></div>
-      <div class="card text-center"><div class="text-xs text-[var(--text2)]">${t('avgDaily')}</div><div class="text-lg font-bold">¥${(totalAll/dayCount).toFixed(0)}</div></div>
-      <div class="card text-center"><div class="text-xs text-[var(--text2)]">${t('txCount')}</div><div class="text-lg font-bold">${txCount}</div></div>
-    </div>
-    <div class="card mb-4"><h4 class="text-xs text-[var(--text2)] mb-2">${period==='year'?'月度趋势':'每日趋势'}</h4><canvas id="trendChart" height="180"></canvas></div>
-    <div class="card mb-4"><h4 class="text-xs text-[var(--text2)] mb-2">每日热力图</h4><div id="heatmap" class="grid grid-cols-7 gap-1"></div></div>
-    <div class="grid grid-cols-2 gap-4">
-      <div class="card"><h4 class="text-xs text-[var(--text2)] mb-2">${t('rankCat')}</h4><div id="rankCat"></div></div>
-      <div class="card"><h4 class="text-xs text-[var(--text2)] mb-2">${t('rankItem')}</h4><div id="rankItem"></div></div>
+    <div class="flex gap-2 mb-3">
+      <button class="btn btn-ghost text-sm ${isMonthly?'font-bold text-[var(--accent)]':''}" onclick="STORE.statsView='monthly';loadStats()">📅 月账单</button>
+      <button class="btn btn-ghost text-sm ${!isMonthly?'font-bold text-[var(--accent)]':''}" onclick="STORE.statsView='yearly';loadStats()">📆 年账单</button>
     </div>`;
 
-  document.getElementById('tabContent').innerHTML = html;
+  if (isMonthly) {
+    html += `
+    <div class="flex gap-2 mb-3">
+      <select class="input text-sm w-20" onchange="STORE.statsYear=+this.value;loadStats()">${yOpts}</select>
+      <select class="input text-sm w-16" onchange="STORE.statsMonth=+this.value;loadStats()">${mOpts}</select>
+    </div>`;
 
-  // 趋势图
-  setTimeout(()=>{
-    const ctx = document.getElementById('trendChart'); if (!ctx) return;
-    if (trendChart) trendChart.destroy();
-    const labels = trendData.map(d=>d.day||d.month); const totals = trendData.map(d=>d.total);
-    trendChart = new Chart(ctx, { type:'line', data:{labels,datasets:[{label:'支出',data:totals,borderColor:'#3b82f6',backgroundColor:'rgba(59,130,246,.1)',fill:true,tension:.4,pointRadius:3}]}, options:{responsive:true,plugins:{legend:{display:false}},scales:{y:{beginAtZero:true}}} });
-  }, 100);
+    const monthStr = statsMonthStr();
+    const [catR, monthlyR, rankR] = await Promise.all([
+      api('/api/stats/category?month='+monthStr),
+      api('/api/stats/monthly?year='+STORE.statsYear),
+      api('/api/stats/ranking?month='+monthStr+'&limit=5'),
+    ]);
+    const catData = (await catR.json()).data;
+    const monthlyData = (await monthlyR.json()).data;
+    const rankData = (await rankR.json()).data;
+    const totalAll = catData.reduce((s,d)=>s+d.total, 0);
 
-  // 热力图
-  setTimeout(()=>{
-    const hm = document.getElementById('heatmap'); if (!hm) return;
-    const ym = new Date().toISOString().slice(0,7);
-    const daysInMonth = new Date(new Date().getFullYear(), new Date().getMonth()+1, 0).getDate();
-    const dayMap = {}; dailyData.forEach(d=>{ dayMap[d.day] = d.total; });
-    const maxVal = Math.max(...Object.values(dayMap), 1);
-    let hmHtml = '<div class="col-span-7 text-xs text-[var(--text2)] mb-1">'+['日','一','二','三','四','五','六'].map(w=>`<span class="inline-block w-8 text-center">${w}</span>`).join('')+'</div>';
-    const firstDow = new Date(ym+'-01').getDay();
-    for (let i=0; i<firstDow; i++) hmHtml += '<div></div>';
-    for (let d=1; d<=daysInMonth; d++) {
-      const dayStr = ym+'-'+String(d).padStart(2,'0');
-      const val = dayMap[dayStr]||0;
-      const intensity = val/maxVal;
-      const bg = val ? `rgba(59,130,246,${.1+intensity*.9})` : 'var(--hover)';
-      hmHtml += `<div class="heat-cell text-center text-xs py-1" style="background:${bg}" title="${dayStr}: ¥${val.toFixed(0)}">${d}</div>`;
+    html += `<div class="card text-center mb-4">
+      <div class="text-xs text-[var(--text2)]">${STORE.statsYear}年${STORE.statsMonth}月 · 合计</div>
+      <div class="text-2xl font-bold">¥ ${totalAll.toFixed(0)}</div>
+    </div>`;
+
+    // 每月支出对比 — 可左右滚动的柱状图
+    html += `<div class="card mb-4"><h4 class="text-xs text-[var(--text2)] mb-2">📊 ${STORE.statsYear}年 每月支出对比</h4>
+      <div style="overflow-x:auto;padding-bottom:8px"><div style="min-width:800px"><canvas id="statsBarChart" height="200"></canvas></div></div></div>`;
+
+    // 当月支出构成
+    html += `<div class="card mb-4"><h4 class="text-xs text-[var(--text2)] mb-2">📂 当月支出构成</h4>`;
+    if (!catData.length) html += `<p class="text-xs text-[var(--text2)] py-2">${t('noData')}</p>`;
+    else catData.forEach(c => {
+      const pct = totalAll ? (c.total/totalAll*100).toFixed(1) : 0;
+      html += `<div class="flex items-center gap-2 text-sm py-1">
+        <span>${c.icon||'📌'}</span><span class="w-14">${c.category}</span>
+        <div class="flex-1 h-3 bg-[var(--hover)] rounded-full overflow-hidden"><div class="h-full rounded-full" style="width:${pct}%;background:${c.color||'#3b82f6'}"></div></div>
+        <span class="font-mono text-xs w-16 text-right">¥${c.total.toFixed(0)}</span><span class="text-xs text-[var(--text2)] w-10 text-right">${pct}%</span></div>`;
+    });
+    html += `</div>`;
+
+    // 当月支出排行
+    html += `<div class="card"><h4 class="text-xs text-[var(--text2)] mb-2">🏆 当月支出排行</h4>`;
+    if (!rankData.by_item.length) html += `<p class="text-xs text-[var(--text2)] py-2">${t('noData')}</p>`;
+    else {
+      const maxItem = rankData.by_item[0]?.total || 1;
+      rankData.by_item.forEach((r,i) => {
+        const pct = maxItem ? (r.total/maxItem*100).toFixed(0) : 0;
+        html += `<div class="flex items-center gap-2 text-sm py-1">
+          <span class="w-6 text-center font-bold text-[var(--text2)]">${i+1}</span>
+          <span class="flex-1 truncate">${escHtml(r.item_name)}</span>
+          <div class="w-24 h-2 bg-[var(--hover)] rounded-full overflow-hidden"><div class="h-full rounded-full" style="width:${pct}%;background:var(--accent)"></div></div>
+          <span class="font-mono text-xs w-16 text-right">¥${r.total.toFixed(0)}</span></div>`;
+      });
     }
-    hm.innerHTML = hmHtml;
-  }, 150);
+    html += `</div>`;
 
-  // 排行
-  setTimeout(()=>{
-    const rc = document.getElementById('rankCat'); if (rc) rc.innerHTML = rankData.by_category.map((r,i)=>`<div class="flex justify-between text-xs py-1"><span>${i+1}. ${r.category}</span><span class="font-mono">¥${r.total.toFixed(0)}</span></div>`).join('')||t('noData');
-    const ri = document.getElementById('rankItem'); if (ri) ri.innerHTML = rankData.by_item.map((r,i)=>`<div class="flex justify-between text-xs py-1"><span>${i+1}. ${escHtml(r.item_name)}</span><span class="font-mono">¥${r.total.toFixed(0)}</span></div>`).join('')||t('noData');
-  }, 200);
+    document.getElementById('tabContent').innerHTML = html;
+
+    // 柱状图
+    setTimeout(()=>{
+      const ctx = document.getElementById('statsBarChart'); if (!ctx) return;
+      if (statsBarChart) statsBarChart.destroy();
+      // 补全12个月（无数据月份填0）
+      const dataMap = {}; monthlyData.forEach(d=>{ dataMap[d.month] = d.total; });
+      const labels = []; const totals = []; const bgColors = [];
+      for (let m=1; m<=12; m++) {
+        const key = STORE.statsYear+'-'+String(m).padStart(2,'0');
+        labels.push(m+'月');
+        totals.push(dataMap[key]||0);
+        bgColors.push(m===STORE.statsMonth?'rgba(59,130,246,.9)':'rgba(148,163,184,.4)');
+      }
+      statsBarChart = new Chart(ctx, { type:'bar', data:{labels,datasets:[{data:totals,backgroundColor:bgColors,borderRadius:4,barPercentage:0.6,categoryPercentage:0.8}]},
+        options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{y:{beginAtZero:true,grid:{color:'var(--border)'}},x:{grid:{display:false}}}} });
+    }, 100);
+
+  } else {
+    // 年账单
+    html += `
+    <div class="flex gap-2 mb-3">
+      <select class="input text-sm w-20" onchange="STORE.statsYear=+this.value;loadStats()">${yOpts}</select>
+    </div>`;
+
+    const [catR, rankR] = await Promise.all([
+      api('/api/stats/category?year='+STORE.statsYear),
+      api('/api/stats/ranking?year='+STORE.statsYear+'&limit=5'),
+    ]);
+    const catData = (await catR.json()).data;
+    const rankData = (await rankR.json()).data;
+    const totalAll = catData.reduce((s,d)=>s+d.total, 0);
+
+    html += `<div class="card text-center mb-4">
+      <div class="text-xs text-[var(--text2)]">${STORE.statsYear}年 · 合计</div>
+      <div class="text-2xl font-bold">¥ ${totalAll.toFixed(0)}</div>
+    </div>`;
+
+    // 支出构成
+    html += `<div class="card mb-4"><h4 class="text-xs text-[var(--text2)] mb-2">📂 支出构成</h4>`;
+    if (!catData.length) html += `<p class="text-xs text-[var(--text2)] py-2">${t('noData')}</p>`;
+    else catData.forEach(c => {
+      const pct = totalAll ? (c.total/totalAll*100).toFixed(1) : 0;
+      html += `<div class="flex items-center gap-2 text-sm py-1">
+        <span>${c.icon||'📌'}</span><span class="w-14">${c.category}</span>
+        <div class="flex-1 h-3 bg-[var(--hover)] rounded-full overflow-hidden"><div class="h-full rounded-full" style="width:${pct}%;background:${c.color||'#3b82f6'}"></div></div>
+        <span class="font-mono text-xs w-16 text-right">¥${c.total.toFixed(0)}</span><span class="text-xs text-[var(--text2)] w-10 text-right">${pct}%</span></div>`;
+    });
+    html += `</div>`;
+
+    // 排行
+    html += `<div class="card"><h4 class="text-xs text-[var(--text2)] mb-2">🏆 ${STORE.statsYear}年 支出排行</h4>`;
+    if (!rankData.by_item.length) html += `<p class="text-xs text-[var(--text2)] py-2">${t('noData')}</p>`;
+    else {
+      const maxItem = rankData.by_item[0]?.total || 1;
+      rankData.by_item.forEach((r,i) => {
+        const pct = maxItem ? (r.total/maxItem*100).toFixed(0) : 0;
+        html += `<div class="flex items-center gap-2 text-sm py-1">
+          <span class="w-6 text-center font-bold text-[var(--text2)]">${i+1}</span>
+          <span class="flex-1 truncate">${escHtml(r.item_name)}</span>
+          <div class="w-24 h-2 bg-[var(--hover)] rounded-full overflow-hidden"><div class="h-full rounded-full" style="width:${pct}%;background:var(--accent)"></div></div>
+          <span class="font-mono text-xs w-16 text-right">¥${r.total.toFixed(0)}</span></div>`;
+      });
+    }
+    html += `</div>`;
+
+    document.getElementById('tabContent').innerHTML = html;
+  }
 }
 
 // ==================== 设置 ====================
-function loadSettings() {
-  document.getElementById('tabContent').innerHTML = `
+async function loadSettings() {
+  const user = STORE.user || {};
+  let html = `
+    <div class="card mb-3"><h4 class="font-medium mb-2">👤 账户信息</h4>
+      <div class="text-sm space-y-1">
+        <p>用户名：<strong>${escHtml(user.username||'')}</strong> ${user.is_admin?'<span class="tag" style="background:var(--accent);color:#fff">管理员</span>':''}</p>
+        <p>API Key：<code class="text-xs bg-[var(--hover)] px-2 py-1 rounded select-all">${escHtml(user.api_key||'')}</code> <button class="btn btn-ghost text-xs py-0 px-1" onclick="copyApiKey()">📋</button></p>
+        <p class="text-xs text-[var(--text2)]">将此 Key 填入 iPhone 快捷指令的 X-API-Key 头</p>
+      </div></div>
+
     <div class="card mb-3"><h4 class="font-medium mb-2">🎨 ${t('settingsTheme')}</h4>
       <div class="flex gap-3">${['light','dark','system'].map(th => `<label class="flex items-center gap-1 text-sm cursor-pointer"><input type="radio" name="theme" value="${th}" ${STORE.theme===th?'checked':''} onchange="setTheme('${th}')"> ${t('theme'+th.charAt(0).toUpperCase()+th.slice(1))}</label>`).join('')}</div></div>
     <div class="card mb-3"><h4 class="font-medium mb-2">🌐 ${t('settingsLang')}</h4>
       <div class="flex gap-3">${['zh_CN','zh_TW','en'].map(l => `<label class="flex items-center gap-1 text-sm cursor-pointer"><input type="radio" name="lang" value="${l}" ${STORE.lang===l?'checked':''} onchange="setLang('${l}')"> ${t('lang'+({zh_CN:'CN',zh_TW:'TW',en:'EN'}[l]))}</label>`).join('')}</div></div>
     <div class="card mb-3"><h4 class="font-medium mb-2">📂 ${t('settingsCats')}</h4>
-      <button class="btn btn-accent text-sm" onclick="openCatManager()">${t('settingsCats')}</button></div>
+      <button class="btn btn-accent text-sm" onclick="openCatManager()">${t('settingsCats')}</button></div>`;
+
+  // 管理员：用户管理
+  if (user.is_admin) {
+    html += `<div class="card mb-3"><h4 class="font-medium mb-2">👥 用户管理</h4>
+      <div id="userList" class="text-sm space-y-1 mb-3"></div>
+      <div class="flex gap-2">
+        <input id="newUsername" class="input flex-1 text-sm" placeholder="新用户名">
+        <input id="newUserPwd" class="input w-24 text-sm" placeholder="密码">
+        <button class="btn btn-accent text-sm" onclick="createUser()">+ 添加</button>
+      </div></div>`;
+  }
+
+  html += `
     <div class="card mb-3"><h4 class="font-medium mb-2">🔐 ${t('settingsAccount')}</h4>
-      <div class="flex gap-2"><button class="btn btn-accent text-sm" onclick="changePassword()">${t('changePwd')}</button><button class="btn btn-danger text-sm" onclick="doLogout()">${t('logout')}</button></div></div>
-    <div class="card"><h4 class="font-medium mb-2">ℹ️ ${t('settingsAbout')}</h4><p class="text-xs text-[var(--text2)]">AI 记账助手 v3.0 · <a href="https://github.com/Koomooneleven/ai-bookkeeping" class="text-[var(--accent)]" target="_blank">GitHub</a></p></div>`;
+      <div class="flex gap-2"><button class="btn btn-danger text-sm" onclick="doLogout()">${t('logout')}</button></div></div>
+    <div class="card"><h4 class="font-medium mb-2">ℹ️ ${t('settingsAbout')}</h4><p class="text-xs text-[var(--text2)]">AI 记账助手 v4.0 · <a href="https://github.com/Koomooneleven/ai-bookkeeping" class="text-[var(--accent)]" target="_blank">GitHub</a></p></div>`;
+
+  document.getElementById('tabContent').innerHTML = html;
+
+  if (user.is_admin) loadUserList();
+}
+
+function copyApiKey() {
+  navigator.clipboard.writeText(STORE.user.api_key).then(() => alert('API Key 已复制'));
+}
+
+async function loadUserList() {
+  const r = await api('/api/auth/users');
+  const d = await r.json();
+  if (!d.success) return;
+  document.getElementById('userList').innerHTML = (d.data.users || []).map(u =>
+    `<div class="flex items-center gap-2 py-1 border-b border-[var(--border)]">
+      <span class="flex-1">${escHtml(u.username)} ${u.is_admin?'👑':''}</span>
+      <code class="text-xs bg-[var(--hover)] px-1 rounded">${escHtml(u.api_key)}</code>
+      <button class="btn btn-ghost text-xs py-0 px-1" onclick="resetUserKey(${u.id})" title="重置Key">🔄</button>
+      <button class="btn btn-ghost text-xs py-0 px-1" onclick="editUser(${u.id},'${escAttr(u.username)}')" title="编辑">✏️</button>
+      ${!u.is_admin ? `<button class="btn btn-danger text-xs py-0 px-1" onclick="deleteUser(${u.id},'${escAttr(u.username)}')" title="删除">🗑️</button>` : ''}
+    </div>`
+  ).join('');
+}
+
+async function resetUserKey(userId) {
+  if (!confirm('确定重置该用户的 API Key 吗？旧的 Key 将立即失效。')) return;
+  const r = await api('/api/auth/users/' + userId + '/reset-key', { method: 'PUT' });
+  const d = await r.json();
+  if (d.success) {
+    alert('新 API Key: ' + d.data.api_key);
+    loadUserList();
+  } else {
+    alert('重置失败: ' + (d.error || '未知错误'));
+  }
+}
+async function editUser(userId, oldName) {
+  const name = prompt('新用户名:', oldName);
+  if (!name || name === oldName) {
+    const pwd = prompt('新密码（留空不修改）:');
+    if (!pwd) return;
+    if (!confirm('确定修改 ' + oldName + ' 的密码吗？')) return;
+    const r = await api('/api/auth/users/' + userId, { method: 'PUT', body: JSON.stringify({ username: oldName, password: pwd }) });
+    const d = await r.json();
+    alert(d.success ? '密码已更新' : '修改失败: ' + (d.error || ''));
+    if (d.success) loadUserList();
+    return;
+  }
+  const pwd = prompt('新密码:');
+  if (!pwd) return;
+  if (!confirm('确定将 ' + oldName + ' 改为 ' + name + ' 并更新密码吗？')) return;
+  const r = await api('/api/auth/users/' + userId, { method: 'PUT', body: JSON.stringify({ username: name, password: pwd }) });
+  const d = await r.json();
+  alert(d.success ? '用户已更新' : '修改失败: ' + (d.error || ''));
+  if (d.success) loadUserList();
+}
+async function deleteUser(userId, name) {
+  if (!confirm('确定删除用户「' + name + '」及其所有数据吗？此操作不可恢复！')) return;
+  const r = await api('/api/auth/users/' + userId, { method: 'DELETE' });
+  const d = await r.json();
+  alert(d.success ? '用户已删除' : '删除失败: ' + (d.error || ''));
+  if (d.success) loadUserList();
+}
+async function createUser() {
+  const username = document.getElementById('newUsername').value.trim();
+  const password = document.getElementById('newUserPwd').value;
+  if (!username || !password) { alert('请输入用户名和密码'); return; }
+  const r = await api('/api/auth/register', {
+    method: 'POST',
+    body: JSON.stringify({ username, password }),
+  });
+  const d = await r.json();
+  if (d.success) {
+    alert('用户已创建！API Key: ' + d.data.api_key);
+    loadUserList();
+    document.getElementById('newUsername').value = '';
+    document.getElementById('newUserPwd').value = '';
+  } else {
+    alert('创建失败: ' + (d.error || '未知错误'));
+  }
 }
 function setTheme(v) { STORE.theme = v; localStorage.setItem('acc_theme', v); applyTheme(); loadSettings(); }
 function setLang(v) { STORE.lang = v; localStorage.setItem('acc_lang', v); applyI18n(); loadCurrentTab(); document.querySelectorAll('.tab-item').forEach(el=>{ const k='tab'+el.dataset.tab.charAt(0).toUpperCase()+el.dataset.tab.slice(1); el.querySelector('span:last-child').textContent=t(k); }); }
-async function changePassword() { const p=prompt('新密码:'); if(p){ await setPassword(p); alert('密码已更新'); } }
 
 // ==================== 编辑功能 ====================
 async function openEdit(id, name, amount, cat, date) {
   document.getElementById('editId').value = id;
   document.getElementById('editName').value = name;
   document.getElementById('editAmount').value = amount;
-  document.getElementById('editDate').value = date.replace(' ','T');
+  document.getElementById('editDate').value = (date||'').replace(' ','T');
   const cats = await (await api('/api/categories')).json();
   document.getElementById('editCategory').innerHTML = cats.data.map(c=>`<option value="${c.name}" ${c.name===cat?'selected':''}>${c.icon} ${c.name}</option>`).join('');
+  document.querySelector('#editModal h3').textContent = t('editTitle');
   document.getElementById('editModal').classList.remove('hidden');
 }
 function closeEdit() { document.getElementById('editModal').classList.add('hidden'); }
+async function openCreate() {
+  document.getElementById('editId').value = '';
+  document.getElementById('editName').value = '';
+  document.getElementById('editAmount').value = '';
+  const now = new Date();
+  document.getElementById('editDate').value = now.getFullYear()+'-'+String(now.getMonth()+1).padStart(2,'0')+'-'+String(now.getDate()).padStart(2,'0')+'T'+String(now.getHours()).padStart(2,'0')+':'+String(now.getMinutes()).padStart(2,'0');
+  const cats = await (await api('/api/categories')).json();
+  document.getElementById('editCategory').innerHTML = cats.data.map(c=>`<option value="${c.name}">${c.icon} ${c.name}</option>`).join('');
+  document.querySelector('#editModal h3').textContent = '添加账单';
+  document.getElementById('editModal').classList.remove('hidden');
+}
 async function saveEdit() {
   const id = document.getElementById('editId').value;
   const body = { item_name: document.getElementById('editName').value, amount: parseFloat(document.getElementById('editAmount').value), category: document.getElementById('editCategory').value, trans_date: document.getElementById('editDate').value.replace('T',' ') };
-  await api('/api/transactions/'+id, { method:'PUT', body:JSON.stringify(body) });
+  if (id) {
+    await api('/api/transactions/'+id, { method:'PUT', body:JSON.stringify(body) });
+  } else {
+    const r = await api('/api/transactions/direct', { method:'POST', body:JSON.stringify(body) });
+    const result = await r.json();
+    if (!result.success) { alert('添加失败: ' + result.error); return; }
+  }
   closeEdit();
   loadCurrentTab();
 }
@@ -467,19 +684,32 @@ function getYearMonth() {
   const end = `${y}-${m.padStart(2,'0')}-${String(lastDay).padStart(2,'0')} 23:59:59`;
   return { month: `${y}-${m.padStart(2,'0')}`, start, end };
 }
-async function updateMonthlyTotal() {
-  const r = await api('/api/stats/category'); const d=(await r.json()).data;
-  document.getElementById('monthlyTotal').textContent = '¥ '+d.reduce((s,x)=>s+x.total,0).toFixed(0);
+async function updateFeedTotal(ym, catFilter) {
+  const monthParam = ym.month || new Date().toISOString().slice(0,7);
+  const r = await api('/api/stats/category?month=' + monthParam);
+  const d = (await r.json()).data;
+  const total = catFilter
+    ? (d.find(x => x.category === catFilter)?.total || 0)
+    : d.reduce((s,x) => s + x.total, 0);
+  document.getElementById('feedTotal').textContent = '¥ ' + total.toFixed(0);
+}
+function toggleSort(field) {
+  if (field === 'date') {
+    STORE.currentSort = STORE.currentSort === 'date_desc' ? 'date_asc' : 'date_desc';
+  } else {
+    STORE.currentSort = STORE.currentSort === 'amount_desc' ? 'amount_asc' : 'amount_desc';
+  }
+  loadFeed();
 }
 function pageNav(d) {
   return `<div class="flex justify-between items-center mt-3 text-sm"><span class="text-[var(--text2)]">共 ${d.total} 条 · 第 ${d.page||1} 页</span>
     <div class="flex gap-1"><button class="btn btn-ghost text-xs" ${(d.page||1)<=1?'disabled':''} onclick="STORE.currentPage--;loadCurrentTab()">‹</button>
     <button class="btn btn-ghost text-xs" ${(d.page||1)*20>=d.total?'disabled':''} onclick="STORE.currentPage++;loadCurrentTab()">›</button></div></div>`;
 }
-async function populateCatFilter(elId) {
+async function populateCatFilter(elId, selected) {
   const el = document.getElementById(elId); if (!el) return;
   const r = await api('/api/categories'); const cats = (await r.json()).data;
-  el.innerHTML = '<option value="">全部</option>' + cats.map(c=>`<option value="${c.name}">${c.icon} ${c.name}</option>`).join('');
+  el.innerHTML = '<option value="">全部</option>' + cats.map(c=>`<option value="${c.name}" ${c.name===selected?'selected':''}>${c.icon} ${c.name}</option>`).join('');
 }
 function escHtml(s) { const d=document.createElement('div'); d.textContent=s; return d.innerHTML; }
 function escAttr(s) { return (s||'').replace(/'/g,"\\'").replace(/"/g,'&quot;'); }

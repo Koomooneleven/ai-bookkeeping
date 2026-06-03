@@ -2,19 +2,34 @@ from datetime import date
 from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, Header, Request
 from database import get_db
-from models import TransactionCreate, TransactionUpdate, TransactionOut, APIResponse
+from models import TransactionCreate, TransactionDirectCreate, TransactionUpdate, TransactionOut, APIResponse
 from ai_parser import parse_transaction
 import json
 
 router = APIRouter(prefix="/transactions", tags=["transactions"])
 
 
-async def verify_api_key(x_api_key: str = Header(...)):
+async def verify_api_key(x_api_key: str = Header(...), db=Depends(get_db)):
     from config import API_KEY
 
-    if x_api_key != API_KEY:
-        raise HTTPException(status_code=403, detail="无效的 API Key")
-    return x_api_key
+    # 查找用户
+    row = await db.execute_fetchall(
+        "SELECT id, is_admin FROM users WHERE api_key = ?", [x_api_key]
+    )
+    if row:
+        return {"user_id": row[0]["id"], "is_admin": bool(row[0]["is_admin"])}
+
+    # 兼容全局 API_KEY（管理操作用）
+    if x_api_key == API_KEY:
+        # 返回 admin 用户
+        admin = await db.execute_fetchall(
+            "SELECT id FROM users WHERE is_admin = 1 LIMIT 1"
+        )
+        if admin:
+            return {"user_id": admin[0]["id"], "is_admin": True}
+        return {"user_id": None, "is_admin": True}
+
+    raise HTTPException(status_code=403, detail="无效的 API Key")
 
 
 async def extract_text(request: Request) -> str:
@@ -45,7 +60,7 @@ async def extract_text(request: Request) -> str:
 async def create_transaction(
     request: Request,
     db=Depends(get_db),
-    _=Depends(verify_api_key),
+    auth=Depends(verify_api_key),
 ):
     text = await extract_text(request)
     if not text:
@@ -59,8 +74,8 @@ async def create_transaction(
         return APIResponse(success=False, error=f"收到: [{text}] → AI错误: {str(e)}")
 
     cursor = await db.execute(
-        """INSERT INTO transactions (amount, currency, item_name, category, trans_date, notes)
-           VALUES (?, ?, ?, ?, ?, ?)""",
+        """INSERT INTO transactions (amount, currency, item_name, category, trans_date, notes, user_id)
+           VALUES (?, ?, ?, ?, ?, ?, ?)""",
         (
             parsed.amount,
             parsed.currency,
@@ -68,6 +83,7 @@ async def create_transaction(
             parsed.category,
             parsed.date,
             parsed.notes,
+            auth["user_id"],
         ),
     )
     await db.commit()
@@ -84,6 +100,25 @@ async def create_transaction(
     )
 
 
+@router.post("/direct", response_model=APIResponse)
+async def create_transaction_direct(
+    body: TransactionDirectCreate,
+    db=Depends(get_db),
+    auth=Depends(verify_api_key),
+):
+    cursor = await db.execute(
+        """INSERT INTO transactions (amount, currency, item_name, category, trans_date, notes, user_id)
+           VALUES (?, ?, ?, ?, ?, ?, ?)""",
+        (body.amount, body.currency, body.item_name, body.category, body.trans_date, body.notes, auth["user_id"]),
+    )
+    await db.commit()
+    return APIResponse(
+        success=True,
+        data={"id": cursor.lastrowid, "amount": body.amount, "currency": body.currency,
+              "item_name": body.item_name, "category": body.category, "trans_date": body.trans_date},
+    )
+
+
 @router.get("", response_model=dict)
 async def list_transactions(
     page: int = 1,
@@ -94,10 +129,10 @@ async def list_transactions(
     sort: Optional[str] = "date_desc",
     search: Optional[str] = None,
     db=Depends(get_db),
-    _=Depends(verify_api_key),
+    auth=Depends(verify_api_key),
 ):
-    conditions = []
-    params = []
+    conditions = ["transactions.user_id = ?"]
+    params = [auth["user_id"]]
 
     if date_from:
         conditions.append("trans_date >= ?")
@@ -142,9 +177,11 @@ async def list_transactions(
 async def get_transaction(
     trans_id: int,
     db=Depends(get_db),
-    _=Depends(verify_api_key),
+    auth=Depends(verify_api_key),
 ):
-    row = await db.execute_fetchall("SELECT * FROM transactions WHERE id = ?", [trans_id])
+    row = await db.execute_fetchall(
+        "SELECT * FROM transactions WHERE id = ? AND user_id = ?", [trans_id, auth["user_id"]]
+    )
     if not row:
         return APIResponse(success=False, error="账单不存在")
     return APIResponse(success=True, data=dict(row[0]))
@@ -155,18 +192,20 @@ async def update_transaction(
     trans_id: int,
     body: TransactionUpdate,
     db=Depends(get_db),
-    _=Depends(verify_api_key),
+    auth=Depends(verify_api_key),
 ):
     updates = {k: v for k, v in body.model_dump().items() if v is not None}
     if not updates:
         return APIResponse(success=False, error="没有需要更新的字段")
 
     set_clause = ", ".join(f"{k} = ?" for k in updates)
-    values = list(updates.values()) + [trans_id]
-    await db.execute(f"UPDATE transactions SET {set_clause} WHERE id = ?", values)
+    values = list(updates.values()) + [trans_id, auth["user_id"]]
+    await db.execute(f"UPDATE transactions SET {set_clause} WHERE id = ? AND user_id = ?", values)
     await db.commit()
 
-    row = await db.execute_fetchall("SELECT * FROM transactions WHERE id = ?", [trans_id])
+    row = await db.execute_fetchall(
+        "SELECT * FROM transactions WHERE id = ? AND user_id = ?", [trans_id, auth["user_id"]]
+    )
     return APIResponse(success=True, data=dict(row[0]))
 
 
@@ -174,8 +213,8 @@ async def update_transaction(
 async def delete_transaction(
     trans_id: int,
     db=Depends(get_db),
-    _=Depends(verify_api_key),
+    auth=Depends(verify_api_key),
 ):
-    await db.execute("DELETE FROM transactions WHERE id = ?", [trans_id])
+    await db.execute("DELETE FROM transactions WHERE id = ? AND user_id = ?", [trans_id, auth["user_id"]])
     await db.commit()
     return APIResponse(success=True, data={"id": trans_id, "deleted": True})

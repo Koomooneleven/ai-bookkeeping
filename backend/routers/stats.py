@@ -10,26 +10,40 @@ router = APIRouter(prefix="/stats", tags=["stats"])
 
 @router.get("/monthly")
 async def monthly_stats(
+    year: str = None,
     db=Depends(get_db),
-    _=Depends(verify_api_key),
+    auth=Depends(verify_api_key),
 ):
-    rows = await db.execute_fetchall("""
-        SELECT strftime('%Y-%m', trans_date) as month,
-               SUM(amount) as total,
-               COUNT(*) as count
-        FROM transactions
-        GROUP BY month
-        ORDER BY month DESC
-        LIMIT 12
-    """)
+    if year:
+        rows = await db.execute_fetchall("""
+            SELECT strftime('%Y-%m', trans_date) as month,
+                   SUM(amount) as total,
+                   COUNT(*) as count
+            FROM transactions
+            WHERE strftime('%Y', trans_date) = ? AND user_id = ?
+            GROUP BY month
+            ORDER BY month ASC
+        """, [year, auth["user_id"]])
+    else:
+        rows = await db.execute_fetchall("""
+            SELECT strftime('%Y-%m', trans_date) as month,
+                   SUM(amount) as total,
+                   COUNT(*) as count
+            FROM transactions
+            WHERE user_id = ?
+            GROUP BY month
+            ORDER BY month DESC
+            LIMIT 12
+        """, [auth["user_id"]])
     return {"success": True, "data": [dict(r) for r in rows]}
 
 
 @router.get("/category")
 async def category_stats(
     month: str = None,
+    year: str = None,
     db=Depends(get_db),
-    _=Depends(verify_api_key),
+    auth=Depends(verify_api_key),
 ):
     if month:
         rows = await db.execute_fetchall("""
@@ -38,11 +52,23 @@ async def category_stats(
                    c.icon,
                    c.color
             FROM transactions t
-            LEFT JOIN categories c ON t.category = c.name
-            WHERE strftime('%Y-%m', t.trans_date) = ?
+            LEFT JOIN categories c ON t.category = c.name AND c.user_id = ?
+            WHERE strftime('%Y-%m', t.trans_date) = ? AND t.user_id = ?
             GROUP BY t.category
             ORDER BY total DESC
-        """, [month])
+        """, [auth["user_id"], month, auth["user_id"]])
+    elif year:
+        rows = await db.execute_fetchall("""
+            SELECT t.category,
+                   SUM(t.amount) as total,
+                   c.icon,
+                   c.color
+            FROM transactions t
+            LEFT JOIN categories c ON t.category = c.name AND c.user_id = ?
+            WHERE strftime('%Y', t.trans_date) = ? AND t.user_id = ?
+            GROUP BY t.category
+            ORDER BY total DESC
+        """, [auth["user_id"], year, auth["user_id"]])
     else:
         rows = await db.execute_fetchall("""
             SELECT t.category,
@@ -50,11 +76,11 @@ async def category_stats(
                    c.icon,
                    c.color
             FROM transactions t
-            LEFT JOIN categories c ON t.category = c.name
-            WHERE strftime('%Y-%m', t.trans_date) = strftime('%Y-%m', 'now')
+            LEFT JOIN categories c ON t.category = c.name AND c.user_id = ?
+            WHERE strftime('%Y-%m', t.trans_date) = strftime('%Y-%m', 'now') AND t.user_id = ?
             GROUP BY t.category
             ORDER BY total DESC
-        """)
+        """, [auth["user_id"], auth["user_id"]])
 
     grand_total = sum(r["total"] for r in rows) or 1
     data = [
@@ -73,30 +99,31 @@ async def category_stats(
 @router.get("/trend")
 async def trend_stats(
     db=Depends(get_db),
-    _=Depends(verify_api_key),
+    auth=Depends(verify_api_key),
 ):
     rows = await db.execute_fetchall("""
         SELECT strftime('%Y-%m', trans_date) as month,
                SUM(amount) as total,
                COUNT(*) as count
         FROM transactions
-        WHERE trans_date >= date('now', '-6 months')
+        WHERE trans_date >= date('now', '-6 months') AND user_id = ?
         GROUP BY month
         ORDER BY month ASC
-    """)
+    """, [auth["user_id"]])
     return {"success": True, "data": [dict(r) for r in rows]}
 
 
 @router.get("/export/csv")
 async def export_csv(
     db=Depends(get_db),
-    _=Depends(verify_api_key),
+    auth=Depends(verify_api_key),
 ):
     rows = await db.execute_fetchall("""
         SELECT trans_date, category, item_name, amount, currency, notes
         FROM transactions
+        WHERE user_id = ?
         ORDER BY trans_date DESC
-    """)
+    """, [auth["user_id"]])
 
     output = io.StringIO()
     writer = csv.writer(output)
@@ -116,7 +143,7 @@ async def export_csv(
 async def daily_stats(
     month: str = None,
     db=Depends(get_db),
-    _=Depends(verify_api_key),
+    auth=Depends(verify_api_key),
 ):
     """每日支出数据，用于热力图。month 格式 YYYY-MM"""
     if not month:
@@ -129,10 +156,10 @@ async def daily_stats(
     rows = await db.execute_fetchall(
         f"""SELECT date(trans_date) as day, SUM(amount) as total, COUNT(*) as count
             FROM transactions
-            WHERE strftime('%Y-%m', trans_date) = {month_query}
+            WHERE strftime('%Y-%m', trans_date) = {month_query} AND user_id = ?
             GROUP BY day
             ORDER BY day""",
-        params,
+        params + [auth["user_id"]],
     )
     return {"success": True, "data": [dict(r) for r in rows]}
 
@@ -141,31 +168,42 @@ async def daily_stats(
 async def ranking_stats(
     period: str = "month",
     limit: int = 5,
+    year: str = None,
+    month: str = None,
     db=Depends(get_db),
-    _=Depends(verify_api_key),
+    auth=Depends(verify_api_key),
 ):
     """支出排行：按分类和按商家"""
-    if period == "week":
+    if month:
+        date_filter = "strftime('%Y-%m', trans_date) = ?"
+        date_param = [month]
+    elif year:
+        date_filter = "strftime('%Y', trans_date) = ?"
+        date_param = [year]
+    elif period == "week":
         date_filter = "trans_date >= date('now', '-7 days')"
+        date_param = []
     elif period == "year":
         date_filter = "trans_date >= date('now', '-1 year')"
+        date_param = []
     else:
         date_filter = "strftime('%Y-%m', trans_date) = strftime('%Y-%m', 'now')"
+        date_param = []
 
     # 按分类排行
     cat_rows = await db.execute_fetchall(
         f"""SELECT category, SUM(amount) as total, COUNT(*) as count
-            FROM transactions WHERE {date_filter}
+            FROM transactions WHERE {date_filter} AND user_id = ?
             GROUP BY category ORDER BY total DESC LIMIT ?""",
-        [limit],
+        date_param + [auth["user_id"], limit],
     )
 
     # 按商家排行
     item_rows = await db.execute_fetchall(
         f"""SELECT item_name, SUM(amount) as total, COUNT(*) as count
-            FROM transactions WHERE {date_filter}
+            FROM transactions WHERE {date_filter} AND user_id = ?
             GROUP BY item_name ORDER BY total DESC LIMIT ?""",
-        [limit],
+        date_param + [auth["user_id"], limit],
     )
 
     return {

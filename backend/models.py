@@ -7,6 +7,15 @@ class TransactionCreate(BaseModel):
     text: str = Field(..., description="消费描述文本，AI 自动解析")
 
 
+class TransactionDirectCreate(BaseModel):
+    amount: float
+    currency: str = "CNY"
+    item_name: str
+    category: str = "其他"
+    trans_date: str  # "YYYY-MM-DD HH:MM" 格式
+    notes: str = ""
+
+
 class TransactionUpdate(BaseModel):
     amount: Optional[float] = None
     currency: Optional[str] = None
@@ -73,3 +82,21 @@ class CategoryOut(BaseModel):
     name: str
     icon: Optional[str]
     color: Optional[str]
+
+
+class UserLogin(BaseModel):
+    username: str
+    password: str
+
+
+class UserCreate(BaseModel):
+    username: str
+    password: str
+
+
+class UserOut(BaseModel):
+    id: int
+    username: str
+    api_key: str
+    is_admin: bool = False
+    created_at: Optional[str] = None
